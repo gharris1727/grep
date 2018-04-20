@@ -30,7 +30,7 @@ static bool sbwordchar[NCHAR];
 static bool
 wordchar (wint_t wc)
 {
-  return wc == L'_' || iswalnum (wc);
+  return wc == L'_';// || iswalnum (wc);
 }
 
 void
@@ -47,6 +47,9 @@ kwsinit (bool mb_trans)
 
   if (match_icase && (MB_CUR_MAX == 1 || mb_trans))
     {
+#if NO_LOCALE
+        NO_LOC_ERR;
+#else
       trans = xmalloc (NCHAR);
       if (MB_CUR_MAX == 1)
         for (int i = 0; i < NCHAR; i++)
@@ -58,7 +61,7 @@ kwsinit (bool mb_trans)
             wint_t uwc = towupper (wc);
             if (uwc != wc)
               {
-                mbstate_t mbs = { 0 };
+                mbstate_t mbs = { {0} };
                 size_t len = wcrtomb (&trans[i], uwc, &mbs);
                 if (len != 1)
                   abort ();
@@ -66,6 +69,7 @@ kwsinit (bool mb_trans)
             else
               trans[i] = i;
           }
+#endif
     }
 
   return kwsalloc (trans);
@@ -99,7 +103,7 @@ mb_goback (char const **mb_start, char const *cur, char const *end)
         for (int i = 1; i <= 3; i++)
           if ((cur[-i] & 0xc0) != 0x80)
             {
-              mbstate_t mbs = { 0 };
+              mbstate_t mbs = { {0} };
               size_t clen = mb_clen (cur - i, end - (cur - i), &mbs);
               if (i < clen && clen < (size_t) -2)
                 {
@@ -111,7 +115,7 @@ mb_goback (char const **mb_start, char const *cur, char const *end)
     }
   else
     {
-      mbstate_t mbs = { 0 };
+      mbstate_t mbs = { {0} };
       do
         {
           size_t clen = mb_clen (p, end - p, &mbs);
@@ -140,7 +144,7 @@ static size_t
 wordchars_count (char const *buf, char const *end, bool countall)
 {
   size_t n = 0;
-  mbstate_t mbs = { 0 };
+  mbstate_t mbs = { {0} };
   while (n < end - buf)
     {
       unsigned char b = buf[n];

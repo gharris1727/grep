@@ -59,8 +59,10 @@ dfaerror (char const *mesg)
 void
 dfawarn (char const *mesg)
 {
+    /*
   if (!getenv ("POSIXLY_CORRECT"))
     dfaerror (mesg);
+    */
 }
 
 /* If the DFA turns out to have some set of fixed strings one of
@@ -294,7 +296,7 @@ EGexecute (void *vdc, char const *buf, size_t size, size_t *match_size,
               /* Keep using the superset while it reports multiline
                  potential matches; this is more likely to be fast
                  than falling back to KWset would be.  */
-              next_beg = dfaexec (superset, dfa_beg, (char *) end, 0,
+              next_beg = dfaexec (superset, dfa_beg, (char *) (intptr_t) end, 0,
                                   &count, NULL);
               if (next_beg == NULL || next_beg == end)
                 continue;
@@ -313,7 +315,7 @@ EGexecute (void *vdc, char const *buf, size_t size, size_t *match_size,
             }
 
           /* Try matching with DFA.  */
-          next_beg = dfaexec (dc->dfa, dfa_beg, (char *) end, 0, &count,
+          next_beg = dfaexec (dc->dfa, dfa_beg, (char *) (intptr_t) end, 1, &count,
                               &backref);
 
           /* If there's no match, or if we've matched the sentinel,

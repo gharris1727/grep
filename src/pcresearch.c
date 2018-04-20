@@ -22,6 +22,9 @@
 #include "search.h"
 #include "die.h"
 
+#undef HAVE_LIBPCRE
+#define HAVE_LIBPCRE 0
+
 #if HAVE_LIBPCRE
 # include <pcre.h>
 
@@ -115,7 +118,7 @@ Pcompile (char *pattern, size_t size, reg_syntax_t ignored)
 {
 #if !HAVE_LIBPCRE
   die (EXIT_TROUBLE, 0,
-       _("support for the -P option is not compiled into "
+       "%s", _("support for the -P option is not compiled into "
          "this --disable-perl-regexp binary"));
 #else
   int e;
@@ -211,7 +214,7 @@ Pexecute (void *vcp, char const *buf, size_t size, size_t *match_size,
 {
 #if !HAVE_LIBPCRE
   /* We can't get here, because Pcompile would have been called earlier.  */
-  die (EXIT_TROUBLE, 0, _("internal error"));
+  die (EXIT_TROUBLE, 0, "%s", _("internal error"));
 #else
   int sub[NSUB];
   char const *p = start_ptr ? start_ptr : buf;

@@ -111,7 +111,9 @@ Fcompile (char *pattern, size_t size, reg_syntax_t ignored)
          the locale is en_US.utf8, append a pattern containing just
          the character U+0131 (LATIN SMALL LETTER DOTLESS I), so that
          Fexecute will use a DFA if the data contain U+0131.  */
-      mbstate_t mbs = { 0 };
+#if !NO_LOCALE
+      mbstate_t mbs = { {} };
+#endif
       char checked[NCHAR] = {0,};
       for (p = pattern; p < pattern + size; p++)
         {
@@ -120,6 +122,9 @@ Fcompile (char *pattern, size_t size, reg_syntax_t ignored)
             continue;
           checked[c] = true;
 
+#if NO_LOCALE
+          NO_LOC_ERR;
+#else
           wint_t wc = localeinfo.sbctowc[c];
           wchar_t folded[CASE_FOLDED_BUFSIZE];
 
@@ -130,6 +135,7 @@ Fcompile (char *pattern, size_t size, reg_syntax_t ignored)
               if (1 < nbytes)
                 kwsincr (kwset, s, nbytes);
             }
+#endif
         }
     }
 

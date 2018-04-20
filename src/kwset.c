@@ -48,8 +48,16 @@
 #include "xalloc.h"
 #include "verify.h"
 
-#define obstack_chunk_alloc xmalloc
-#define obstack_chunk_free free
+static void *lalloc(size_t size) {
+    return malloc(size);
+}
+
+static void lfree(void *addr) {
+    free(addr);
+}
+
+#define obstack_chunk_alloc lalloc
+#define obstack_chunk_free lfree
 
 static unsigned char
 U (char ch)
