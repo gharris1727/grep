@@ -23,11 +23,11 @@
 #include <sys/stat.h>
 #include <wchar.h>
 #include <fcntl.h>
-#include <inttypes.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include "system.h"
 
+#include "inttypes.h"
 #include "argmatch.h"
 #include "c-ctype.h"
 #include "c-stack.h"
@@ -38,8 +38,8 @@
 #include "exclude.h"
 #include "exitfail.h"
 #include "fcntl-safer.h"
-#include "fts_.h"
-#include "getopt.h"
+//#include "fts_.h"
+//#include "getopt.h"
 #include "getprogname.h"
 #include "grep.h"
 #include "intprops.h"
@@ -50,7 +50,11 @@
 #include "version-etc.h"
 #include "xalloc.h"
 #include "xbinary-io.h"
-#include "xstrtol.h"
+//#include "xstrtol.h"
+
+#include <slbuf.h>
+#include <sys/proc.h>
+#include <sys/syscallsubr.h>
 
 enum { SEP_CHAR_SELECTED = ':' };
 enum { SEP_CHAR_REJECTED = '-' };
@@ -65,11 +69,13 @@ static char const SEP_STR_GROUP[] = "--";
    avoiding a potential (racy) infinite loop.  */
 static struct stat out_stat;
 
+#if 0
 /* if non-zero, display usage information and exit */
 static int show_help;
 
 /* Print the version on standard output and exit.  */
 static bool show_version;
+#endif
 
 /* Suppress diagnostics for nonexistent or unreadable files.  */
 static bool suppress_errors;
@@ -101,16 +107,18 @@ struct FL_pair
    will be three entries in LF_PAIR: {1, x} {6, y} {8, z}, where
    x, y and z are just place-holders for shell-generated names.  */
 static struct FL_pair *fl_pair;
+#if 0
 static size_t n_fl_pair_slots;
+#endif
 /* Count not only -f-specified files, but also individual -e operands
    and any command-line argument that serves as a regular expression.  */
 static size_t n_pattern_files;
 
+#if 0
 /* The number of patterns seen so far.
    It is advanced by fl_add and, when needed, used in pattern_file_name
    to derive a file-relative line number.  */
 static size_t n_patterns;
-
 /* Return the number of newline bytes in BUF with size SIZE.  */
 static size_t _GL_ATTRIBUTE_PURE
 count_nl_bytes (char const *buf, size_t size)
@@ -122,7 +130,9 @@ count_nl_bytes (char const *buf, size_t size)
     p++, n++;
   return n;
 }
+#endif
 
+#if 0
 /* Append a FILENAME,line-number pair to FL_PAIR, and update
    pattern-related counts from the contents of BUF with SIZE bytes.  */
 static void
@@ -136,6 +146,7 @@ fl_add (char const *buf, size_t size, char const *filename)
   n_pattern_files++;
   n_patterns += count_nl_bytes (buf, size);
 }
+#endif
 
 /* Map the line number, LINENO, of one of the input patterns to the
    name of the file from which it came.  If it was read from stdin
@@ -374,48 +385,52 @@ static const struct color_cap color_dict[] =
 static int stdout_errno;
 
 static void
-putchar_errno (int c)
+putchar_errno (struct slbuf *slbuf, int c)
 {
-  if (putchar (c) < 0)
-    stdout_errno = errno;
+    char cc = (char) c;
+    slbuf_write(slbuf, &cc, 1);
 }
 
 static void
-fputs_errno (char const *s)
+fputs_errno (struct slbuf *slbuf, char const *s)
 {
-  if (fputs (s, stdout) < 0)
-    stdout_errno = errno;
+    slbuf_write(slbuf, s, strlen(s));
 }
 
-static void _GL_ATTRIBUTE_FORMAT_PRINTF (1, 2)
-printf_errno (char const *format, ...)
+static void __attribute__((format (printf, 2, 3)))
+printf_errno (struct slbuf *slbuf, char const *format, ...)
 {
-  va_list ap;
-  va_start (ap, format);
-  if (vfprintf (stdout, format, ap) < 0)
-    stdout_errno = errno;
-  va_end (ap);
+    va_list ap;
+    va_start (ap, format);
+
+    char *out = NULL;
+    int size = 0;
+    if ((size = vasprintf(&out, SHIM_MALLOC_TYPE, format, ap)) < 0) {
+        stdout_errno = errno;
+    } else {
+        slbuf_write(slbuf, out, size);
+    }
+    va_end (ap);
 }
 
 static void
-fwrite_errno (void const *ptr, size_t size, size_t nmemb)
+fwrite_errno (struct slbuf *slbuf, void const *ptr, size_t size, size_t nmemb)
 {
-  if (fwrite (ptr, size, nmemb, stdout) != nmemb)
-    stdout_errno = errno;
+    slbuf_write(slbuf, ptr, size*nmemb);
 }
 
 static void
 fflush_errno (void)
 {
-  if (fflush (stdout) != 0)
-    stdout_errno = errno;
 }
 
 static struct exclude *excluded_patterns[2];
 static struct exclude *excluded_directory_patterns[2];
+#if 0
 /* Short options.  */
 static char const short_options[] =
 "0123456789A:B:C:D:EFGHIPTUVX:abcd:e:f:hiLlm:noqRrsuvwxyZz";
+#endif
 
 /* Non-boolean long options that have no corresponding short equivalents.  */
 enum
@@ -431,6 +446,7 @@ enum
   LABEL_OPTION
 };
 
+#if 0
 /* Long options equivalences. */
 static struct option const long_options[] =
 {
@@ -487,6 +503,9 @@ static struct option const long_options[] =
   {0, 0, 0, 0}
 };
 
+#endif
+
+
 /* Define flags declared in grep.h. */
 bool match_icase;
 bool match_words;
@@ -511,6 +530,7 @@ enum directories_type
     SKIP_DIRECTORIES
   };
 
+#if 0
 /* How to handle directories.  */
 static char const *const directories_args[] =
 {
@@ -522,10 +542,8 @@ static enum directories_type const directories_types[] =
 };
 ARGMATCH_VERIFY (directories_args, directories_types);
 
+#endif
 static enum directories_type directories = READ_DIRECTORIES;
-
-enum { basic_fts_options = FTS_CWDFD | FTS_NOSTAT | FTS_TIGHT_CYCLE_CHECK };
-static int fts_options = basic_fts_options | FTS_COMFOLLOW | FTS_PHYSICAL;
 
 /* How to handle devices. */
 static enum
@@ -535,8 +553,7 @@ static enum
     SKIP_DEVICES
   } devices = READ_COMMAND_LINE_DEVICES;
 
-static bool grepfile (int, char const *, bool, bool);
-static bool grepdesc (int, bool);
+static bool grepdesc (struct thread *, struct slbuf *slbuf, int, bool);
 
 static bool
 is_device_mode (mode_t m)
@@ -572,10 +589,6 @@ enum { SEEK_HOLE = SEEK_SET };
 static bool seek_failed;
 static bool seek_data_failed;
 
-/* Functions we'll use to search. */
-typedef void *(*compile_fp_t) (char *, size_t, reg_syntax_t);
-typedef size_t (*execute_fp_t) (void *, char const *, size_t, size_t *,
-                                char const *);
 static execute_fp_t execute;
 static void *compiled_pattern;
 
@@ -596,6 +609,7 @@ suppressible_error (int errnum)
   errseen = true;
 }
 
+#if 0
 /* If there has already been a write error, don't bother closing
    standard output, as that might elicit a duplicate diagnostic.  */
 static void
@@ -604,6 +618,7 @@ clean_up_stdout (void)
   if (! stdout_errno)
     close_stdout ();
 }
+#endif
 
 /* A cast to TYPE of VAL.  Use this when TYPE is a pointer type, VAL
    is properly aligned for TYPE, and 'gcc -Wcast-align' cannot infer
@@ -635,6 +650,7 @@ struct localeinfo localeinfo;
    if W & UNIBYTE_MASK is zero.  */
 static uword unibyte_mask;
 
+#if 0
 static void
 initialize_unibyte_mask (void)
 {
@@ -658,6 +674,7 @@ initialize_unibyte_mask (void)
   uword uword_max = -1;
   unibyte_mask = uword_max / UCHAR_MAX * mask;
 }
+#endif
 
 /* Skip the easy bytes in a buffer that is guaranteed to have a sentinel
    that is not easy, and return a pointer to the first non-easy byte.
@@ -690,7 +707,7 @@ buf_has_encoding_errors (char *buf, size_t size)
   if (! unibyte_mask)
     return false;
 
-  mbstate_t mbs = { 0 };
+  mbstate_t mbs = { {0} };
   size_t clen;
 
   buf[size] = -1;
@@ -719,7 +736,7 @@ buf_has_nulls (char *buf, size_t size)
    SIZE bytes have already been read from the file
    with descriptor FD and status ST.  */
 static bool
-file_must_have_nulls (size_t size, int fd, struct stat const *st)
+file_must_have_nulls (struct thread *td, size_t size, int fd, struct stat const *st)
 {
   /* If the file has holes, it must contain a null byte somewhere.  */
   if (SEEK_HOLE != SEEK_SET && !seek_failed
@@ -728,16 +745,16 @@ file_must_have_nulls (size_t size, int fd, struct stat const *st)
       off_t cur = size;
       if (O_BINARY || fd == STDIN_FILENO)
         {
-          cur = lseek (fd, 0, SEEK_CUR);
+          cur = kern_lseek (td, fd, 0, SEEK_CUR);
           if (cur < 0)
             return false;
         }
 
       /* Look for a hole after the current location.  */
-      off_t hole_start = lseek (fd, cur, SEEK_HOLE);
+      off_t hole_start = kern_lseek (td, fd, cur, SEEK_HOLE);
       if (0 <= hole_start)
         {
-          if (lseek (fd, cur, SEEK_SET) < 0)
+          if (kern_lseek (td, fd, cur, SEEK_SET) < 0)
             suppressible_error (errno);
           if (hole_start < st->st_size)
             return true;
@@ -747,6 +764,7 @@ file_must_have_nulls (size_t size, int fd, struct stat const *st)
   return false;
 }
 
+#if 0
 /* Convert STR to a nonnegative integer, storing the result in *OUT.
    STR must be a valid context length argument; report an error if it
    isn't.  Silently ceiling *OUT at the maximum value, as that is
@@ -754,17 +772,7 @@ file_must_have_nulls (size_t size, int fd, struct stat const *st)
 static void
 context_length_arg (char const *str, intmax_t *out)
 {
-  switch (xstrtoimax (str, 0, 10, out, ""))
-    {
-    case LONGINT_OK:
-    case LONGINT_OVERFLOW:
-      if (0 <= *out)
-        break;
-      FALLTHROUGH;
-    default:
-      die (EXIT_TROUBLE, 0, "%s: %s", str,
-           _("invalid context length argument"));
-    }
+  *out = strtol (str, NULL, 10);
 }
 
 /* Return the add_exclude options suitable for excluding a file name.
@@ -774,6 +782,7 @@ exclude_options (bool command_line)
 {
   return EXCLUDE_WILDCARDS | (command_line ? 0 : EXCLUDE_ANCHORED);
 }
+#endif
 
 /* Return true if the file with NAME should be skipped.
    If COMMAND_LINE, it is a command-line argument.
@@ -843,12 +852,12 @@ all_zeros (char const *buf, size_t size)
 /* Reset the buffer for a new file, returning false if we should skip it.
    Initialize on the first time through. */
 static bool
-reset (int fd, struct stat const *st)
+reset (struct thread *td, int fd, struct stat const *st)
 {
   bufbeg = buflim = ALIGN_TO (buffer + 1, pagesize);
   bufbeg[-1] = eolbyte;
   bufdesc = fd;
-  bufoffset = fd == STDIN_FILENO ? lseek (fd, 0, SEEK_CUR) : 0;
+  bufoffset = fd == STDIN_FILENO ? kern_lseek (td, fd, 0, SEEK_CUR) : 0;
   seek_failed = bufoffset < 0;
 
   /* Assume SEEK_DATA fails if SEEK_CUR does.  */
@@ -871,7 +880,7 @@ reset (int fd, struct stat const *st)
    to the beginning of the buffer contents, and 'buflim'
    points just after the end.  Return false if there's an error.  */
 static bool
-fillbuf (size_t save, struct stat const *st)
+fillbuf (struct thread *td, size_t save, struct stat const *st)
 {
   size_t fillsize;
   bool cc = true;
@@ -941,7 +950,7 @@ fillbuf (size_t save, struct stat const *st)
 
   while (true)
     {
-      fillsize = safe_read (bufdesc, readbuf, readsize);
+      fillsize = kern_pread (td, bufdesc, readbuf, readsize, bufoffset);
       if (fillsize == SAFE_READ_ERROR)
         {
           fillsize = 0;
@@ -956,10 +965,10 @@ fillbuf (size_t save, struct stat const *st)
       if (SEEK_DATA != SEEK_SET && !seek_data_failed)
         {
           /* Solaris SEEK_DATA fails with errno == ENXIO in a hole at EOF.  */
-          off_t data_start = lseek (bufdesc, bufoffset, SEEK_DATA);
+          off_t data_start = kern_lseek (td, bufdesc, bufoffset, SEEK_DATA);
           if (data_start < 0 && errno == ENXIO
               && usable_st_size (st) && bufoffset < st->st_size)
-            data_start = lseek (bufdesc, 0, SEEK_END);
+            data_start = kern_lseek (td, bufdesc, 0, SEEK_END);
 
           if (data_start < 0)
             seek_data_failed = true;
@@ -1011,11 +1020,15 @@ static bool out_byte;		/* Print byte offsets. */
 static intmax_t out_before;	/* Lines of leading context. */
 static intmax_t out_after;	/* Lines of trailing context. */
 static bool count_matches;	/* Count matching lines.  */
+#if 0
 static bool no_filenames;	/* Suppress file names.  */
+#endif
 static intmax_t max_count;	/* Max number of selected
                                    lines from an input file.  */
 static bool line_buffered;	/* Use line buffering.  */
+#if 0
 static char *label = NULL;      /* Fake filename for stdin */
+#endif
 
 
 /* Internal variables to keep track of byte count, context, etc. */
@@ -1028,7 +1041,9 @@ static intmax_t outleft;	/* Maximum number of selected lines.  */
 static intmax_t pending;	/* Pending lines of output.
                                    Always kept 0 if out_quiet is true.  */
 static bool done_on_match;	/* Stop scanning file on first match.  */
+#if 0
 static bool exit_on_match;	/* Exit on first match.  */
+#endif
 static bool dev_null_output;	/* Stdout is known to be /dev/null.  */
 static bool binary;		/* Use binary rather than text I/O.  */
 
@@ -1050,28 +1065,28 @@ nlscan (char const *lim)
 
 /* Print the current filename.  */
 static void
-print_filename (void)
+print_filename (struct slbuf *slbuf)
 {
   pr_sgr_start_if (filename_color);
-  fputs_errno (input_filename ());
+  fputs_errno (slbuf, input_filename ());
   pr_sgr_end_if (filename_color);
 }
 
 /* Print a character separator.  */
 static void
-print_sep (char sep)
+print_sep (struct slbuf *slbuf, char sep)
 {
   pr_sgr_start_if (sep_color);
-  putchar_errno (sep);
+  putchar_errno (slbuf, sep);
   pr_sgr_end_if (sep_color);
 }
 
 /* Print a line number or a byte offset.  */
 static void
-print_offset (uintmax_t pos, const char *color)
+print_offset (struct slbuf *slbuf, uintmax_t pos, const char *color)
 {
   pr_sgr_start_if (color);
-  printf_errno ("%*"PRIuMAX, offset_width, pos);
+  printf_errno (slbuf, ("%*"PRIuMAX), offset_width, pos);
   pr_sgr_end_if (color);
 }
 
@@ -1085,7 +1100,7 @@ print_offset (uintmax_t pos, const char *color)
    Return true unless the line was suppressed due to an encoding error.  */
 
 static bool
-print_line_head (char *beg, size_t len, char const *lim, char sep)
+print_line_head (struct slbuf *slbuf, char *beg, size_t len, char const *lim, char sep)
 {
   if (binary_files != TEXT_BINARY_FILES)
     {
@@ -1101,11 +1116,11 @@ print_line_head (char *beg, size_t len, char const *lim, char sep)
 
   if (out_file)
     {
-      print_filename ();
+      print_filename (slbuf);
       if (filename_mask)
-        print_sep (sep);
+        print_sep (slbuf, sep);
       else
-        putchar_errno (0);
+        putchar_errno (slbuf, 0);
     }
 
   if (out_line)
@@ -1116,25 +1131,25 @@ print_line_head (char *beg, size_t len, char const *lim, char sep)
           totalnl = add_count (totalnl, 1);
           lastnl = lim;
         }
-      print_offset (totalnl, line_num_color);
-      print_sep (sep);
+      print_offset (slbuf, totalnl, line_num_color);
+      print_sep (slbuf, sep);
     }
 
   if (out_byte)
     {
       uintmax_t pos = add_count (totalcc, beg - bufbeg);
-      print_offset (pos, byte_num_color);
-      print_sep (sep);
+      print_offset (slbuf, pos, byte_num_color);
+      print_sep (slbuf, sep);
     }
 
   if (align_tabs && (out_file | out_line | out_byte) && len != 0)
-    putchar_errno ('\t');
+    putchar_errno (slbuf, '\t');
 
   return true;
 }
 
 static char *
-print_line_middle (char *beg, char *lim,
+print_line_middle (struct slbuf *slbuf, char *beg, char *lim,
                    const char *line_color, const char *match_color)
 {
   size_t match_size;
@@ -1171,7 +1186,7 @@ print_line_middle (char *beg, char *lim,
           if (only_matching)
             {
               char sep = out_invert ? SEP_CHAR_REJECTED : SEP_CHAR_SELECTED;
-              if (! print_line_head (b, match_size, lim, sep))
+              if (! print_line_head (slbuf, b, match_size, lim, sep))
                 return NULL;
             }
           else
@@ -1182,14 +1197,14 @@ print_line_middle (char *beg, char *lim,
                   cur = mid;
                   mid = NULL;
                 }
-              fwrite_errno (cur, 1, b - cur);
+              fwrite_errno (slbuf, cur, 1, b - cur);
             }
 
           pr_sgr_start_if (match_color);
-          fwrite_errno (b, 1, match_size);
+          fwrite_errno (slbuf, b, 1, match_size);
           pr_sgr_end_if (match_color);
           if (only_matching)
-            putchar_errno (eolbyte);
+            putchar_errno (slbuf, eolbyte);
         }
     }
 
@@ -1202,7 +1217,7 @@ print_line_middle (char *beg, char *lim,
 }
 
 static char *
-print_line_tail (char *beg, const char *lim, const char *line_color)
+print_line_tail (struct slbuf *slbuf, char *beg, const char *lim, const char *line_color)
 {
   size_t eol_size;
   size_t tail_size;
@@ -1214,7 +1229,7 @@ print_line_tail (char *beg, const char *lim, const char *line_color)
   if (tail_size > 0)
     {
       pr_sgr_start (line_color);
-      fwrite_errno (beg, 1, tail_size);
+      fwrite_errno (slbuf, beg, 1, tail_size);
       beg += tail_size;
       pr_sgr_end (line_color);
     }
@@ -1223,14 +1238,14 @@ print_line_tail (char *beg, const char *lim, const char *line_color)
 }
 
 static void
-prline (char *beg, char *lim, char sep)
+prline (struct slbuf *slbuf, char *beg, char *lim, char sep)
 {
   bool matching;
   const char *line_color;
   const char *match_color;
 
   if (!only_matching)
-    if (! print_line_head (beg, lim - beg - 1, lim, sep))
+    if (! print_line_head (slbuf, beg, lim - beg - 1, lim, sep))
       return;
 
   matching = (sep == SEP_CHAR_SELECTED) ^ out_invert;
@@ -1252,7 +1267,7 @@ prline (char *beg, char *lim, char sep)
       /* We already know that non-matching lines have no match (to colorize). */
       if (matching && (only_matching || *match_color))
         {
-          beg = print_line_middle (beg, lim, line_color, match_color);
+          beg = print_line_middle (slbuf, beg, lim, line_color, match_color);
           if (! beg)
             return;
         }
@@ -1261,12 +1276,12 @@ prline (char *beg, char *lim, char sep)
         {
           /* This code is exercised at least when grep is invoked like this:
              echo k| GREP_COLORS='sl=01;32' src/grep k --color=always  */
-          beg = print_line_tail (beg, lim, line_color);
+          beg = print_line_tail (slbuf, beg, lim, line_color);
         }
     }
 
   if (!only_matching && lim > beg)
-    fwrite_errno (beg, 1, lim - beg);
+    fwrite_errno (slbuf, beg, 1, lim - beg);
 
   if (line_buffered)
     fflush_errno ();
@@ -1279,26 +1294,26 @@ prline (char *beg, char *lim, char sep)
 
 /* Print pending lines of trailing context prior to LIM.  */
 static void
-prpending (char const *lim)
+prpending (struct slbuf *slbuf, char const *lim)
 {
   if (!lastout)
     lastout = bufbeg;
   for (; 0 < pending && lastout < lim; pending--)
     {
       char *nl = memchr (lastout, eolbyte, lim - lastout);
-      prline (lastout, nl + 1, SEP_CHAR_REJECTED);
+      prline (slbuf, lastout, nl + 1, SEP_CHAR_REJECTED);
     }
 }
 
 /* Output the lines between BEG and LIM.  Deal with context.  */
 static void
-prtext (char *beg, char *lim)
+prtext (struct slbuf *slbuf, char *beg, char *lim)
 {
   static bool used;	/* Avoid printing SEP_STR_GROUP before any output.  */
   char eol = eolbyte;
 
   if (!out_quiet && pending > 0)
-    prpending (beg);
+    prpending (slbuf, beg);
 
   char *p = beg;
 
@@ -1319,16 +1334,16 @@ prtext (char *beg, char *lim)
           && p != lastout && group_separator)
         {
           pr_sgr_start_if (sep_color);
-          fputs_errno (group_separator);
+          fputs_errno (slbuf, group_separator);
           pr_sgr_end_if (sep_color);
-          putchar_errno ('\n');
+          putchar_errno (slbuf, '\n');
         }
 
       while (p < beg)
         {
           char *nl = memchr (p, eol, beg - p);
           nl++;
-          prline (p, nl, SEP_CHAR_REJECTED);
+          prline (slbuf, p, nl, SEP_CHAR_REJECTED);
           p = nl;
         }
     }
@@ -1342,7 +1357,7 @@ prtext (char *beg, char *lim)
           char *nl = memchr (p, eol, lim - p);
           nl++;
           if (!out_quiet)
-            prline (p, nl, SEP_CHAR_SELECTED);
+            prline (slbuf, p, nl, SEP_CHAR_SELECTED);
           p = nl;
         }
     }
@@ -1350,7 +1365,7 @@ prtext (char *beg, char *lim)
     {
       /* Just one line is output.  */
       if (!out_quiet)
-        prline (beg, lim, SEP_CHAR_SELECTED);
+        prline (slbuf, beg, lim, SEP_CHAR_SELECTED);
       n = 1;
       p = lim;
     }
@@ -1386,7 +1401,7 @@ zap_nuls (char *p, char *lim, char eol)
    between matching lines if OUT_INVERT is true).  Return a count of
    lines printed.  Replace all NUL bytes with NUL_ZAPPER as we go.  */
 static intmax_t
-grepbuf (char *beg, char const *lim)
+grepbuf (struct slbuf *slbuf, char *beg, char const *lim)
 {
   intmax_t outleft0 = outleft;
   char *endp;
@@ -1412,11 +1427,9 @@ grepbuf (char *beg, char const *lim)
         {
           char *prbeg = out_invert ? p : b;
           char *prend = out_invert ? b : endp;
-          prtext (prbeg, prend);
+          prtext (slbuf, prbeg, prend);
           if (!outleft || done_on_match)
             {
-              if (exit_on_match)
-                exit (errseen ? exit_failure : EXIT_SUCCESS);
               break;
             }
         }
@@ -1428,7 +1441,7 @@ grepbuf (char *beg, char const *lim)
 /* Search a given (non-directory) file.  Return a count of lines printed.
    Set *INEOF to true if end-of-file reached.  */
 static intmax_t
-grep (int fd, struct stat const *st, bool *ineof)
+grep (struct thread *td, struct slbuf *slbuf, int fd, struct stat const *st, bool *ineof)
 {
   intmax_t nlines, i;
   size_t residue, save;
@@ -1445,7 +1458,7 @@ grep (int fd, struct stat const *st, bool *ineof)
      before the first null.  -1 if no input nulls have been deduced.  */
   intmax_t nlines_first_null = -1;
 
-  if (! reset (fd, st))
+  if (! reset (td, fd, st))
     return 0;
 
   totalcc = 0;
@@ -1461,7 +1474,7 @@ grep (int fd, struct stat const *st, bool *ineof)
   residue = 0;
   save = 0;
 
-  if (! fillbuf (save, st))
+  if (! fillbuf (td, save, st))
     {
       suppressible_error (errno);
       return 0;
@@ -1482,7 +1495,7 @@ grep (int fd, struct stat const *st, bool *ineof)
     {
       if (nlines_first_null < 0 && eol && binary_files != TEXT_BINARY_FILES
           && (buf_has_nulls (bufbeg, buflim - bufbeg)
-              || (firsttime && file_must_have_nulls (buflim - bufbeg, fd, st))))
+              || (firsttime && file_must_have_nulls (td, buflim - bufbeg, fd, st))))
         {
           if (binary_files == WITHOUT_MATCH_BINARY_FILES)
             return 0;
@@ -1525,9 +1538,9 @@ grep (int fd, struct stat const *st, bool *ineof)
       if (beg < lim)
         {
           if (outleft)
-            nlines += grepbuf (beg, lim);
+            nlines += grepbuf (slbuf, beg, lim);
           if (pending)
-            prpending (lim);
+            prpending (slbuf, lim);
           if ((!outleft && !pending)
               || (done_on_match && MAX (0, nlines_first_null) < nlines))
             goto finish_grep;
@@ -1556,7 +1569,7 @@ grep (int fd, struct stat const *st, bool *ineof)
         totalcc = add_count (totalcc, buflim - bufbeg - save);
       if (out_line)
         nlscan (beg);
-      if (! fillbuf (save, st))
+      if (! fillbuf (td, save, st))
         {
           suppressible_error (errno);
           goto finish_grep;
@@ -1566,9 +1579,9 @@ grep (int fd, struct stat const *st, bool *ineof)
     {
       *buflim++ = eol;
       if (outleft)
-        nlines += grepbuf (bufbeg + save - residue, buflim);
+        nlines += grepbuf (slbuf, bufbeg + save - residue, buflim);
       if (pending)
-        prpending (buflim);
+        prpending (slbuf, buflim);
     }
 
  finish_grep:
@@ -1577,13 +1590,14 @@ grep (int fd, struct stat const *st, bool *ineof)
   if (!out_quiet && (encoding_error_output
                      || (0 <= nlines_first_null && nlines_first_null < nlines)))
     {
-      printf_errno (_("Binary file %s matches\n"), input_filename ());
+      printf_errno (slbuf, _("Binary file %s matches\n"), input_filename ());
       if (line_buffered)
         fflush_errno ();
     }
   return nlines;
 }
 
+#if 0
 static bool
 grepdirent (FTS *fts, FTSENT *ent, bool command_line)
 {
@@ -1673,6 +1687,7 @@ grepdirent (FTS *fts, FTSENT *ent, bool command_line)
 
   return grepfile (fts->fts_cwd_fd, ent->fts_accpath, follow, command_line);
 }
+#endif
 
 /* True if errno is ERR after 'open ("symlink", ... O_NOFOLLOW ...)'.
    POSIX specifies ELOOP, but it's EMLINK on FreeBSD and EFTYPE on NetBSD.  */
@@ -1688,22 +1703,22 @@ open_symlink_nofollow_error (int err)
   return false;
 }
 
-static bool
-grepfile (int dirdesc, char const *name, bool follow, bool command_line)
+bool
+grepfile (struct thread *td, struct slbuf *slbuf, int dirdesc, char const *name, bool follow, bool command_line)
 {
   int oflag = (O_RDONLY | O_NOCTTY
                | (IGNORE_DUPLICATE_BRANCH_WARNING
                   (binary ? O_BINARY : 0))
                | (follow ? 0 : O_NOFOLLOW)
                | (skip_devices (command_line) ? O_NONBLOCK : 0));
-  int desc = openat_safer (dirdesc, name, oflag);
+  int desc = kern_openat (td, dirdesc, (char*) (intptr_t) name, UIO_SYSSPACE, oflag, 0644) ? EIO : td->td_retval[0];
   if (desc < 0)
     {
       if (follow || ! open_symlink_nofollow_error (errno))
         suppressible_error (errno);
       return true;
     }
-  return grepdesc (desc, command_line);
+  return grepdesc (td, slbuf, desc, command_line);
 }
 
 /* Read all data from FD, with status ST.  Return true if successful,
@@ -1739,23 +1754,23 @@ drain_input (int fd, struct stat const *st)
    pipe.  */
 
 static void
-finalize_input (int fd, struct stat const *st, bool ineof)
+finalize_input (struct thread *td, int fd, struct stat const *st, bool ineof)
 {
   if (fd == STDIN_FILENO
       && (outleft
           ? (!ineof
              && (seek_failed
-                 || (lseek (fd, 0, SEEK_END) < 0
+                 || (kern_lseek (td, fd, 0, SEEK_END) < 0
                      /* Linux proc file system has EINVAL (Bug#25180).  */
                      && errno != EINVAL))
              && ! drain_input (fd, st))
           : (bufoffset != after_last_match && !seek_failed
-             && lseek (fd, after_last_match, SEEK_SET) < 0)))
+             && kern_lseek (td, fd, after_last_match, SEEK_SET) < 0)))
     suppressible_error (errno);
 }
 
 static bool
-grepdesc (int desc, bool command_line)
+grepdesc (struct thread *td, struct slbuf *slbuf, int desc, bool command_line)
 {
   intmax_t count;
   bool status = true;
@@ -1768,7 +1783,7 @@ grepdesc (int desc, bool command_line)
      example, normally DESC is a directory only at the top level, but
      there is an exception if some other process substitutes a
      directory for a non-directory while 'grep' is running.  */
-  if (fstat (desc, &st) != 0)
+  if (kern_fstat (td, desc, &st) != 0)
     {
       suppressible_error (errno);
       goto closeout;
@@ -1789,6 +1804,7 @@ grepdesc (int desc, bool command_line)
          unfortunately fts provides no way to traverse the directory
          starting from its file descriptor.  */
 
+#if 0
       FTS *fts;
       FTSENT *ent;
       int opts = fts_options & ~(command_line ? 0 : FTS_COMFOLLOW);
@@ -1812,6 +1828,7 @@ grepdesc (int desc, bool command_line)
       if (fts_close (fts) != 0)
         suppressible_error (errno);
       return status;
+#endif
     }
   if (desc != STDIN_FILENO
       && ((directories == SKIP_DIRECTORIES && S_ISDIR (st.st_mode))
@@ -1848,18 +1865,18 @@ grepdesc (int desc, bool command_line)
       goto closeout;
     }
 
-  count = grep (desc, &st, &ineof);
+  count = grep (td, slbuf, desc, &st, &ineof);
   if (count_matches)
     {
       if (out_file)
         {
-          print_filename ();
+          print_filename (slbuf);
           if (filename_mask)
-            print_sep (SEP_CHAR_SELECTED);
+            print_sep (slbuf, SEP_CHAR_SELECTED);
           else
-            putchar_errno (0);
+            putchar_errno (slbuf, 0);
         }
-      printf_errno ("%" PRIdMAX "\n", count);
+      printf_errno (slbuf, "%" PRIdMAX "\n", count);
       if (line_buffered)
         fflush_errno ();
     }
@@ -1867,21 +1884,22 @@ grepdesc (int desc, bool command_line)
   status = !count == !(list_files == LISTFILES_NONMATCHING);
 
   if (list_files == LISTFILES_NONE)
-    finalize_input (desc, &st, ineof);
+    finalize_input (td, desc, &st, ineof);
   else if (status == 0)
     {
-      print_filename ();
-      putchar_errno ('\n' & filename_mask);
+      print_filename (slbuf);
+      putchar_errno (slbuf, '\n' & filename_mask);
       if (line_buffered)
         fflush_errno ();
     }
 
  closeout:
-  if (desc != STDIN_FILENO && close (desc) != 0)
+  if (desc != STDIN_FILENO && kern_close (td, desc) != 0)
     suppressible_error (errno);
   return status;
 }
 
+#if 0
 static bool
 grep_command_line_arg (char const *arg)
 {
@@ -1890,15 +1908,17 @@ grep_command_line_arg (char const *arg)
       filename = label;
       if (binary)
         xset_binary_mode (STDIN_FILENO, O_BINARY);
-      return grepdesc (STDIN_FILENO, true);
+      return grepdesc (td, slbuf, STDIN_FILENO, true);
     }
   else
     {
       filename = arg;
-      return grepfile (AT_FDCWD, arg, true, true);
+      return grepfile (td, slbuf, AT_FDCWD, arg, true, true);
     }
 }
+#endif
 
+#if 0
 _Noreturn void usage (int);
 void
 usage (int status)
@@ -2001,16 +2021,11 @@ if any error occurs and -q is not given, the exit status is 2.\n"));
     }
   exit (status);
 }
+#endif
 
 /* Pattern compilers and matchers.  */
 
-static struct
-{
-  char name[12];
-  int syntax; /* used if compile == GEAcompile */
-  compile_fp_t compile;
-  execute_fp_t execute;
-} const matchers[] = {
+const matcher_t matchers[7] = {
   { "grep", RE_SYNTAX_GREP, GEAcompile, EGexecute },
   { "egrep", RE_SYNTAX_EGREP, GEAcompile, EGexecute },
   { "fgrep", 0, Fcompile, Fexecute, },
@@ -2022,6 +2037,7 @@ static struct
 /* Keep these in sync with the 'matchers' table.  */
 enum { E_MATCHER_INDEX = 1, F_MATCHER_INDEX = 2, G_MATCHER_INDEX = 0 };
 
+#if 0
 /* Return the index of the matcher corresponding to M if available.
    MATCHER is the index of the previous matcher, or -1 if none.
    Exit in case of conflicts or if M is not available.  */
@@ -2038,7 +2054,9 @@ setmatcher (char const *m, int matcher)
 
   die (EXIT_TROUBLE, 0, _("invalid matcher %s"), m);
 }
+#endif
 
+#if 0
 /* Find the white-space-separated options specified by OPTIONS, and
    using BUF to store copies of these options, set ARGV[0], ARGV[1],
    etc. to the option copies.  Return the number N of options found.
@@ -2069,7 +2087,9 @@ prepend_args (char const *options, char *buf, char **argv)
       *b++ = '\0';
     }
 }
+#endif
 
+#if 0
 /* Prepend the whitespace-separated options in OPTIONS to the argument
    vector of a main program with argument count *PARGC and argument
    vector *PARGV.  Return the number of options prepended.  */
@@ -2098,7 +2118,9 @@ prepend_default_options (char const *options, int *pargc, char ***pargv)
 
   return 0;
 }
+#endif
 
+#if 0
 /* Get the next non-digit option from ARGC and ARGV.
    Return -1 if there are no more options.
    Process any digit options that were encountered on the way,
@@ -2157,12 +2179,13 @@ get_nondigit_option (int argc, char *const *argv, intmax_t *default_context)
 
   return opt;
 }
+#endif
 
 /* Parse GREP_COLORS.  The default would look like:
      GREP_COLORS='ms=01;31:mc=01;31:sl=:cx=:fn=35:ln=32:bn=32:se=36'
    with boolean capabilities (ne and rv) unset (i.e., omitted).
    No character escaping is needed or supported.  */
-static void
+void
 parse_grep_colors (void)
 {
   const char *p;
@@ -2170,7 +2193,11 @@ parse_grep_colors (void)
   char *name;
   char *val;
 
+#if 0
   p = getenv ("GREP_COLORS"); /* Plural! */
+#else
+  p = "ms=01;31:mc=01;31:sl=:cx=:fn=35:ln=32:bn=32:se=36";
+#endif
   if (p == NULL || *p == '\0')
     return;
 
@@ -2217,11 +2244,12 @@ parse_grep_colors (void)
       return;
 }
 
+#if 0
 /* Return true if PAT (of length PATLEN) contains an encoding error.  */
 static bool
 contains_encoding_error (char const *pat, size_t patlen)
 {
-  mbstate_t mbs = { 0 };
+  mbstate_t mbs = { {0} };
   size_t i, charlen;
 
   for (i = 0; i < patlen; i += charlen)
@@ -2232,7 +2260,9 @@ contains_encoding_error (char const *pat, size_t patlen)
     }
   return false;
 }
+#endif
 
+#if 0
 /* Return the number of bytes in the initial character of PAT, of size
    PATLEN, if Fcompile can handle that character.  Return -1 if
    Fcompile cannot handle it.  MBS is the multibyte conversion state.
@@ -2261,7 +2291,9 @@ fgrep_icase_charlen (char const *pat, size_t patlen, mbstate_t *mbs)
     }
   return n;
 }
+#endif
 
+#if 0
 /* Return true if the -F patterns PAT, of size PATLEN, contain only
    single-byte characters or characters not subject to case folding,
    and so can be processed by Fcompile.  */
@@ -2269,7 +2301,7 @@ fgrep_icase_charlen (char const *pat, size_t patlen, mbstate_t *mbs)
 static bool
 fgrep_icase_available (char const *pat, size_t patlen)
 {
-  mbstate_t mbs = {0,};
+  mbstate_t mbs = {{0}};
 
   for (size_t i = 0; i < patlen; )
     {
@@ -2281,6 +2313,7 @@ fgrep_icase_available (char const *pat, size_t patlen)
 
   return true;
 }
+#endif
 
 /* Change the pattern *KEYS_P, of size *LEN_P, from fgrep to grep style.  */
 
@@ -2289,7 +2322,7 @@ fgrep_to_grep_pattern (char **keys_p, size_t *len_p)
 {
   size_t len = *len_p;
   char *keys = *keys_p;
-  mbstate_t mb_state = { 0 };
+  mbstate_t mb_state = { {0} };
   char *new_keys = xnmalloc (len + 1, 2);
   char *p = new_keys;
   size_t n;
@@ -2303,7 +2336,8 @@ fgrep_to_grep_pattern (char **keys_p, size_t *len_p)
           n = len;
           FALLTHROUGH;
         default:
-          p = mempcpy (p, keys, n);
+          memcpy (p, keys, n);
+          p += n;
           break;
 
         case (size_t) -1:
@@ -2326,6 +2360,7 @@ fgrep_to_grep_pattern (char **keys_p, size_t *len_p)
   *len_p = p - new_keys;
 }
 
+#if 0
 /* If it is easy, convert the MATCHER-style patterns KEYS (of size
    *LEN_P) to -F style, update *LEN_P to a possibly-smaller value, and
    return F_MATCHER_INDEX.  If not, leave KEYS and *LEN_P alone and
@@ -2341,7 +2376,9 @@ try_fgrep_pattern (int matcher, char *keys, size_t *len_p)
   char *new_keys = xmalloc (len + 1);
   char *p = new_keys;
   char const *q = keys;
-  mbstate_t mb_state = { 0 };
+#if !NO_LOCALE
+  mbstate_t mb_state = { {0} };
+#endif
 
   while (len != 0)
     {
@@ -2379,6 +2416,10 @@ try_fgrep_pattern (int matcher, char *keys, size_t *len_p)
 
       {
         size_t n;
+#if NO_LOCALE
+        NO_LOC_ERR;
+        n = 1;
+#else
         if (match_icase)
           {
             int ni = fgrep_icase_charlen (q, len, &mb_state);
@@ -2392,8 +2433,9 @@ try_fgrep_pattern (int matcher, char *keys, size_t *len_p)
             if (MB_LEN_MAX < n)
               goto fail;
           }
-
-        p = mempcpy (p, q, n);
+#endif
+        memcpy (p, q, n);
+        p += n;
         q += n;
         len -= n;
       }
@@ -2410,7 +2452,9 @@ try_fgrep_pattern (int matcher, char *keys, size_t *len_p)
   free (new_keys);
   return result;
 }
+#endif 
 
+#if 0
 int
 main (int argc, char **argv)
 {
@@ -2459,7 +2503,6 @@ main (int argc, char **argv)
   if (prepended)
     error (0, 0, _("warning: GREP_OPTIONS is deprecated;"
                    " please use an alias or script"));
-
   while (prev_optind = optind,
          (opt = get_nondigit_option (argc, argv, &default_context)) != -1)
     switch (opt)
@@ -2933,3 +2976,5 @@ main (int argc, char **argv)
   /* We register via atexit to test stdout.  */
   return errseen ? EXIT_TROUBLE : status;
 }
+
+#endif

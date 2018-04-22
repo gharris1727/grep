@@ -21,6 +21,7 @@
 #define GREP_GREP_H 1
 
 #include <stdbool.h>
+#include <slbuf.h>
 
 /* The following flags are exported from grep for the matchers
    to look at. */
@@ -30,5 +31,22 @@ extern bool match_lines;	/* -x */
 extern char eolbyte;		/* -z */
 
 extern char const *pattern_file_name (size_t, size_t *);
+
+typedef void *(*compile_fp_t) (char *, size_t, unsigned long int);
+typedef size_t (*execute_fp_t) (void *, char const *, size_t, size_t *,
+        char const *);
+
+bool grepfile (struct thread *td, struct slbuf *slbuf, int dirdesc, char const *name, bool follow, bool command_line);
+void parse_grep_colors (void);
+
+typedef struct
+{
+  char name[12];
+  int syntax; /* used if compile == GEAcompile */
+  compile_fp_t compile;
+  execute_fp_t execute;
+} matcher_t;
+
+extern const matcher_t matchers[7];
 
 #endif

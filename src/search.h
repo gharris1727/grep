@@ -19,8 +19,6 @@
 #ifndef GREP_SEARCH_H
 #define GREP_SEARCH_H 1
 
-#include <config.h>
-
 #include <sys/types.h>
 #include <stdint.h>
 #include <wchar.h>
