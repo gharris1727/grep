@@ -397,18 +397,20 @@ fputs_errno (struct slbuf *slbuf, char const *s)
     slbuf_write(slbuf, s, strlen(s));
 }
 
+#define PRINTF_BUF_SZ 1024
+static char printf_buf[PRINTF_BUF_SZ];
+
 static void __attribute__((format (printf, 2, 3)))
 printf_errno (struct slbuf *slbuf, char const *format, ...)
 {
     va_list ap;
     va_start (ap, format);
 
-    char *out = NULL;
-    int size = 0;
-    if ((size = vasprintf(&out, SHIM_MALLOC_TYPE, format, ap)) < 0) {
+    ssize_t size = 0;
+    if ((size = vsnprintf(printf_buf, PRINTF_BUF_SZ, format, ap)) < 0) {
         stdout_errno = errno;
     } else {
-        slbuf_write(slbuf, out, size);
+        slbuf_write(slbuf, printf_buf, MIN(size, PRINTF_BUF_SZ));
     }
     va_end (ap);
 }
@@ -552,8 +554,6 @@ static enum
     READ_DEVICES,
     SKIP_DEVICES
   } devices = READ_COMMAND_LINE_DEVICES;
-
-static bool grepdesc (struct thread *, struct slbuf *slbuf, int, bool);
 
 static bool
 is_device_mode (mode_t m)
@@ -1769,7 +1769,7 @@ finalize_input (struct thread *td, int fd, struct stat const *st, bool ineof)
     suppressible_error (errno);
 }
 
-static bool
+bool
 grepdesc (struct thread *td, struct slbuf *slbuf, int desc, bool command_line)
 {
   intmax_t count;

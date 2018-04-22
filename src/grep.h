@@ -37,6 +37,8 @@ typedef size_t (*execute_fp_t) (void *, char const *, size_t, size_t *,
         char const *);
 
 bool grepfile (struct thread *td, struct slbuf *slbuf, int dirdesc, char const *name, bool follow, bool command_line);
+bool grepdesc (struct thread *, struct slbuf *slbuf, int, bool);
+
 void parse_grep_colors (void);
 
 typedef struct
