@@ -407,9 +407,7 @@ printf_errno (struct slbuf *slbuf, char const *format, ...)
     va_start (ap, format);
 
     ssize_t size = 0;
-    if ((size = vsnprintf(printf_buf, PRINTF_BUF_SZ, format, ap)) < 0) {
-        stdout_errno = errno;
-    } else {
+    if ((size = vsnprintf(printf_buf, PRINTF_BUF_SZ, format, ap)) >= 0) {
         slbuf_write(slbuf, printf_buf, MIN(size, PRINTF_BUF_SZ));
     }
     va_end (ap);
@@ -589,8 +587,8 @@ enum { SEEK_HOLE = SEEK_SET };
 static bool seek_failed;
 static bool seek_data_failed;
 
-static execute_fp_t execute;
-static void *compiled_pattern;
+execute_fp_t execute;
+void *compiled_pattern;
 
 static char const *
 input_filename (void)
@@ -755,7 +753,7 @@ file_must_have_nulls (struct thread *td, size_t size, int fd, struct stat const 
       if (0 <= hole_start)
         {
           if (kern_lseek (td, fd, cur, SEEK_SET) < 0)
-            suppressible_error (errno);
+            suppressible_error (EFAULT);
           if (hole_start < st->st_size)
             return true;
         }
@@ -865,12 +863,16 @@ reset (struct thread *td, int fd, struct stat const *st)
 
   if (seek_failed)
     {
+#if 0
       if (errno != ESPIPE)
         {
-          suppressible_error (errno);
+#endif
+          suppressible_error (EFAULT);
           return false;
+#if 0
         }
       bufoffset = 0;
+#endif
     }
   return true;
 }
@@ -966,7 +968,10 @@ fillbuf (struct thread *td, size_t save, struct stat const *st)
         {
           /* Solaris SEEK_DATA fails with errno == ENXIO in a hole at EOF.  */
           off_t data_start = kern_lseek (td, bufdesc, bufoffset, SEEK_DATA);
-          if (data_start < 0 && errno == ENXIO
+          if (data_start < 0 
+#if 0
+                  && errno == ENXIO
+#endif
               && usable_st_size (st) && bufoffset < st->st_size)
             data_start = kern_lseek (td, bufdesc, 0, SEEK_END);
 
@@ -1476,7 +1481,7 @@ grep (struct thread *td, struct slbuf *slbuf, int fd, struct stat const *st, boo
 
   if (! fillbuf (td, save, st))
     {
-      suppressible_error (errno);
+      suppressible_error (EFAULT);
       return 0;
     }
 
@@ -1493,6 +1498,7 @@ grep (struct thread *td, struct slbuf *slbuf, int fd, struct stat const *st, boo
 
   for (bool firsttime = true; ; firsttime = false)
     {
+        uprintf("In for loop\n");
       if (nlines_first_null < 0 && eol && binary_files != TEXT_BINARY_FILES
           && (buf_has_nulls (bufbeg, buflim - bufbeg)
               || (firsttime && file_must_have_nulls (td, buflim - bufbeg, fd, st))))
@@ -1571,7 +1577,7 @@ grep (struct thread *td, struct slbuf *slbuf, int fd, struct stat const *st, boo
         nlscan (beg);
       if (! fillbuf (td, save, st))
         {
-          suppressible_error (errno);
+          suppressible_error (EFAULT);
           goto finish_grep;
         }
     }
@@ -1714,8 +1720,8 @@ grepfile (struct thread *td, struct slbuf *slbuf, int dirdesc, char const *name,
   int desc = kern_openat (td, dirdesc, (char*) (intptr_t) name, UIO_SYSSPACE, oflag, 0644) ? EIO : td->td_retval[0];
   if (desc < 0)
     {
-      if (follow || ! open_symlink_nofollow_error (errno))
-        suppressible_error (errno);
+      if (follow || ! open_symlink_nofollow_error (EFAULT))
+        suppressible_error (EFAULT);
       return true;
     }
   return grepdesc (td, slbuf, desc, command_line);
@@ -1766,7 +1772,7 @@ finalize_input (struct thread *td, int fd, struct stat const *st, bool ineof)
              && ! drain_input (fd, st))
           : (bufoffset != after_last_match && !seek_failed
              && kern_lseek (td, fd, after_last_match, SEEK_SET) < 0)))
-    suppressible_error (errno);
+    suppressible_error (EFAULT);
 }
 
 bool
@@ -1785,7 +1791,7 @@ grepdesc (struct thread *td, struct slbuf *slbuf, int desc, bool command_line)
      directory for a non-directory while 'grep' is running.  */
   if (kern_fstat (td, desc, &st) != 0)
     {
-      suppressible_error (errno);
+      suppressible_error (EFAULT);
       goto closeout;
     }
 
@@ -1895,7 +1901,7 @@ grepdesc (struct thread *td, struct slbuf *slbuf, int desc, bool command_line)
 
  closeout:
   if (desc != STDIN_FILENO && kern_close (td, desc) != 0)
-    suppressible_error (errno);
+    suppressible_error (EFAULT);
   return status;
 }
 

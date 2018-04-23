@@ -49,12 +49,16 @@ struct kwsearch
 void *
 Fcompile (char *pattern, size_t size, reg_syntax_t ignored)
 {
+#if !NO_LOCALE
   kwset_t kwset;
+#endif
   ptrdiff_t total = size;
   char *buf = NULL;
   size_t bufalloc = 0;
 
+#if !NO_LOCALE
   kwset = kwsinit (true);
+#endif
 
   char const *p = pattern;
   do
@@ -92,14 +96,18 @@ Fcompile (char *pattern, size_t size, reg_syntax_t ignored)
             }
           len += 2;
         }
+#if !NO_LOCALE
       kwsincr (kwset, p, len);
+#endif
 
       p = sep;
     }
   while (p);
 
   free (buf);
+#if !NO_LOCALE
   ptrdiff_t words = kwswords (kwset);
+#endif
 
   if (match_icase)
     {
@@ -139,11 +147,15 @@ Fcompile (char *pattern, size_t size, reg_syntax_t ignored)
         }
     }
 
+#if !NO_LOCALE
   kwsprep (kwset);
+#endif
 
   struct kwsearch *kwsearch = xmalloc (sizeof *kwsearch);
+#if !NO_LOCALE
   kwsearch->kwset = kwset;
   kwsearch->words = words;
+#endif
   kwsearch->pattern = pattern;
   kwsearch->size = size;
   kwsearch->re = NULL;
@@ -200,6 +212,9 @@ Fexecute (void *vcp, char const *buf, size_t size, size_t *match_size,
           return EGexecute (kwsearch->re, buf, size, match_size, start_ptr);
         }
 
+#if NO_LOCALE
+      NO_LOC_ERR;
+#else
       if (mb_check && mb_goback (&mb_start, beg + offset, buf + size) != 0)
         {
           /* We have matched a single byte that is not at the beginning of a
@@ -218,6 +233,7 @@ Fexecute (void *vcp, char const *buf, size_t size, size_t *match_size,
           beg = mb_start - 1;
           continue;
         }
+#endif
       beg += offset;
       if (!!start_ptr & !match_words)
         goto success_in_beg_and_len;
@@ -229,6 +245,9 @@ Fexecute (void *vcp, char const *buf, size_t size, size_t *match_size,
       if (! match_words)
         goto success;
 
+#if NO_LOCALE
+      NO_LOC_ERR;
+#else
       /* Succeed if the preceding and following characters are word
          constituents.  If the following character is not a word
          constituent, keep trying with shorter matches.  */
@@ -257,6 +276,7 @@ Fexecute (void *vcp, char const *buf, size_t size, size_t *match_size,
          since they cannot precede the next match and not skipping
          them could make things much slower.  */
       beg += wordchars_size (beg, buf + size);
+#endif
       mb_start = beg;
     } /* for (beg in buf) */
 

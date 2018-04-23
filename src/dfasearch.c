@@ -75,7 +75,9 @@ kwsmusts (struct dfa_comp *dc)
   struct dfamust *dm = dfamust (dc->dfa);
   if (!dm)
     return;
+#if !NO_LOCALE
   dc->kwset = kwsinit (false);
+#endif
   if (dm->exact)
     {
       /* Prepare a substring whose presence implies a match.
@@ -140,8 +142,10 @@ GEAcompile (char *pattern, size_t size, reg_syntax_t syntax_bits)
       else
         len = patlim - p;
 
+      uprintf("%ld %ld %p %p %ld\n", palloc, dc->pcount, dc->patterns, &palloc, sizeof (struct re_pattern_buffer));
+
       if (palloc <= dc->pcount)
-        dc->patterns = x2nrealloc (dc->patterns, &palloc, sizeof *dc->patterns);
+        dc->patterns = x2nrealloc (dc->patterns, &palloc, sizeof (struct re_pattern_buffer));
       struct re_pattern_buffer *pat = &dc->patterns[dc->pcount];
       pat->buffer = NULL;
       pat->allocated = 0;
@@ -281,8 +285,12 @@ EGexecute (void *vdc, char const *buf, size_t size, size_t *match_size,
                     goto success;
                   if (mb_start < beg)
                     mb_start = beg;
+#if NO_LOCALE
+                  NO_LOC_ERR;
+#else
                   if (mb_goback (&mb_start, match, buflim) == 0)
                     goto success;
+#endif
                   /* The matched line starts in the middle of a multibyte
                      character.  Perform the DFA search starting from the
                      beginning of the next character.  */
@@ -386,9 +394,13 @@ EGexecute (void *vdc, char const *buf, size_t size, size_t *match_size,
                 while (match <= best_match)
                   {
                     regoff_t shorter_len = 0;
+#if NO_LOCALE
+                    NO_LOC_ERR;
+#else
                     if (! wordchar_next (match + len, end - 1)
                         && ! wordchar_prev (beg, match, end - 1))
                       goto assess_pattern_match;
+#endif
                     if (len > 0)
                       {
                         /* Try a shorter length anchored at the same place. */

@@ -17,6 +17,7 @@
    02110-1301, USA.  */
 
 #include <config.h>
+#include <wctype.h>
 
 #define SEARCH_INLINE _GL_EXTERN_INLINE
 #define SYSTEM_INLINE _GL_EXTERN_INLINE

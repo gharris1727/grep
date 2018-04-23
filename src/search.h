@@ -37,6 +37,7 @@ _GL_INLINE_HEADER_BEGIN
 # define SEARCH_INLINE _GL_INLINE
 #endif
 
+#if !NO_LOCALE
 /* This must be a signed type.  Each value is the difference in the size
    of a character (in bytes) induced by converting to lower case.
    The vast majority of values are 0, but a few are 1 or -1, so
@@ -51,6 +52,7 @@ extern size_t wordchar_next (char const *, char const *) _GL_ATTRIBUTE_PURE;
 extern size_t wordchar_prev (char const *, char const *, char const *)
   _GL_ATTRIBUTE_PURE;
 extern ptrdiff_t mb_goback (char const **, char const *, char const *);
+#endif
 
 /* dfasearch.c */
 extern void *GEAcompile (char *, size_t, reg_syntax_t);
