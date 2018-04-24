@@ -40,6 +40,8 @@ bool grepfile (struct thread *td, struct slbuf *slbuf, int dirdesc, char const *
 bool grepdesc (struct thread *, struct slbuf *slbuf, int, bool);
 
 void parse_grep_colors (void);
+void init_globals(void);
+void clean_globals(void);
 
 typedef struct
 {

@@ -1498,7 +1498,6 @@ grep (struct thread *td, struct slbuf *slbuf, int fd, struct stat const *st, boo
 
   for (bool firsttime = true; ; firsttime = false)
     {
-        uprintf("In for loop\n");
       if (nlines_first_null < 0 && eol && binary_files != TEXT_BINARY_FILES
           && (buf_has_nulls (bufbeg, buflim - bufbeg)
               || (firsttime && file_must_have_nulls (td, buflim - bufbeg, fd, st))))
@@ -2984,3 +2983,20 @@ main (int argc, char **argv)
 }
 
 #endif
+
+void init_globals(void) {
+  /* Prefer sysconf for page size, as getpagesize typically returns int.  */
+  long psize = 4096;
+  if (! (0 < psize && psize <= (SIZE_MAX - sizeof (uword)) / 2))
+    abort ();
+  pagesize = psize;
+  bufalloc = ALIGN_TO (INITIAL_BUFSIZE, pagesize) + pagesize + sizeof (uword);
+  buffer = xmalloc (bufalloc);
+
+  init_localeinfo (&localeinfo);
+}
+
+void clean_globals(void) {
+    free(buffer);
+}
+
