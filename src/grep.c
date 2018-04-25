@@ -972,7 +972,7 @@ fillbuf (struct thread *td, size_t save, struct stat const *st)
         auio.uio_resid = readsize;
         auio.uio_segflg = UIO_SYSSPACE;
 
-        if (kern_preadv(td, bufdesc, &auio, bufoffset)) {
+        if (kern_readv(td, bufdesc, &auio)) {
             break;
         }
         fillsize = readsize - auio.uio_resid;
@@ -1779,7 +1779,7 @@ drain_input (struct thread *td, int fd, struct stat const *st)
         auio.uio_resid = bufalloc;
         auio.uio_segflg = UIO_SYSSPACE;
 
-        if(kern_preadv(td, fd, &auio, -1)) {
+        if(kern_readv(td, fd, &auio)) {
             break;
         }
         nbytes = bufalloc - auio.uio_resid;
