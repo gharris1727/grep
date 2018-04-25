@@ -307,33 +307,59 @@ static const char *context_line_color  = "";	/* default color pair */
       It would be impractical for GNU grep to become a full-fledged
       terminal program linked against ncurses or the like, so it will
       not detect terminfo(5) capabilities.  */
-static const char *sgr_start = "\33[%sm\33[K";
-static const char *sgr_end   = "\33[m\33[K";
+static int sgr_alt = 0;
+
+#define PRINTF_BUF_SZ 1024
+static char printf_buf[PRINTF_BUF_SZ];
+
+static void __attribute__((format (printf, 2, 3)))
+printf_errno (struct slbuf *slbuf, char const *format, ...)
+{
+    va_list ap;
+    va_start (ap, format);
+
+    ssize_t size = 0;
+    if ((size = vsnprintf(printf_buf, PRINTF_BUF_SZ, format, ap)) >= 0) {
+        slbuf_write(slbuf, printf_buf, MIN(size, PRINTF_BUF_SZ));
+    }
+    va_end (ap);
+}
 
 /* SGR utility functions.  */
 static void
-pr_sgr_start (char const *s)
+pr_sgr_start (struct slbuf *slbuf, char const *s)
 {
-  if (*s)
-    print_start_colorize (sgr_start, s);
+  if (*s) {
+
+      if (sgr_alt) {
+          printf_errno (slbuf, "\33[%sm", s);
+      } else {
+          printf_errno (slbuf, "\33[%sm\33[K", s);
+      }
+  }
 }
 static void
-pr_sgr_end (char const *s)
+pr_sgr_end (struct slbuf *slbuf, char const *s)
 {
-  if (*s)
-    print_end_colorize (sgr_end);
+  if (*s) {
+      if (sgr_alt) {
+          printf_errno (slbuf, "\33[m");
+      } else {
+          printf_errno (slbuf, "\33[m\33[K");
+      }
+  }
 }
 static void
-pr_sgr_start_if (char const *s)
+pr_sgr_start_if (struct slbuf *slbuf, char const *s)
 {
   if (color_option)
-    pr_sgr_start (s);
+    pr_sgr_start (slbuf, s);
 }
 static void
-pr_sgr_end_if (char const *s)
+pr_sgr_end_if (struct slbuf *slbuf, char const *s)
 {
   if (color_option)
-    pr_sgr_end (s);
+    pr_sgr_end (slbuf, s);
 }
 
 struct color_cap
@@ -360,8 +386,7 @@ color_cap_rv_fct (void)
 static void
 color_cap_ne_fct (void)
 {
-  sgr_start = "\33[%sm";
-  sgr_end   = "\33[m";
+    sgr_alt = true;
 }
 
 /* For GREP_COLORS.  */
@@ -395,22 +420,6 @@ static void
 fputs_errno (struct slbuf *slbuf, char const *s)
 {
     slbuf_write(slbuf, s, strlen(s));
-}
-
-#define PRINTF_BUF_SZ 1024
-static char printf_buf[PRINTF_BUF_SZ];
-
-static void __attribute__((format (printf, 2, 3)))
-printf_errno (struct slbuf *slbuf, char const *format, ...)
-{
-    va_list ap;
-    va_start (ap, format);
-
-    ssize_t size = 0;
-    if ((size = vsnprintf(printf_buf, PRINTF_BUF_SZ, format, ap)) >= 0) {
-        slbuf_write(slbuf, printf_buf, MIN(size, PRINTF_BUF_SZ));
-    }
-    va_end (ap);
 }
 
 static void
@@ -952,12 +961,21 @@ fillbuf (struct thread *td, size_t save, struct stat const *st)
 
   while (true)
     {
-      fillsize = kern_pread (td, bufdesc, readbuf, readsize, bufoffset);
-      if (fillsize == SAFE_READ_ERROR)
-        {
-          fillsize = 0;
-          cc = false;
+
+        struct uio auio;
+        struct iovec aiov;
+
+        aiov.iov_base = readbuf;
+        aiov.iov_len = readsize;
+        auio.uio_iov = &aiov;
+        auio.uio_iovcnt = 1;
+        auio.uio_resid = readsize;
+        auio.uio_segflg = UIO_SYSSPACE;
+
+        if (kern_preadv(td, bufdesc, &auio, bufoffset)) {
+            break;
         }
+        fillsize = readsize - auio.uio_resid;
       bufoffset += fillsize;
 
       if (((fillsize == 0) | !skip_nuls) || !all_zeros (readbuf, fillsize))
@@ -1072,27 +1090,27 @@ nlscan (char const *lim)
 static void
 print_filename (struct slbuf *slbuf)
 {
-  pr_sgr_start_if (filename_color);
+  pr_sgr_start_if (slbuf, filename_color);
   fputs_errno (slbuf, input_filename ());
-  pr_sgr_end_if (filename_color);
+  pr_sgr_end_if (slbuf, filename_color);
 }
 
 /* Print a character separator.  */
 static void
 print_sep (struct slbuf *slbuf, char sep)
 {
-  pr_sgr_start_if (sep_color);
+  pr_sgr_start_if (slbuf, sep_color);
   putchar_errno (slbuf, sep);
-  pr_sgr_end_if (sep_color);
+  pr_sgr_end_if (slbuf, sep_color);
 }
 
 /* Print a line number or a byte offset.  */
 static void
 print_offset (struct slbuf *slbuf, uintmax_t pos, const char *color)
 {
-  pr_sgr_start_if (color);
+  pr_sgr_start_if (slbuf, color);
   printf_errno (slbuf, ("%*"PRIuMAX), offset_width, pos);
-  pr_sgr_end_if (color);
+  pr_sgr_end_if (slbuf, color);
 }
 
 /* Print a whole line head (filename, line, byte).  The output data
@@ -1171,6 +1189,7 @@ print_line_middle (struct slbuf *slbuf, char *beg, char *lim,
     {
       b = beg + match_offset;
 
+
       /* Avoid matching the empty line at the end of the buffer. */
       if (b == lim)
         break;
@@ -1196,7 +1215,7 @@ print_line_middle (struct slbuf *slbuf, char *beg, char *lim,
             }
           else
             {
-              pr_sgr_start (line_color);
+              pr_sgr_start (slbuf, line_color);
               if (mid)
                 {
                   cur = mid;
@@ -1205,9 +1224,9 @@ print_line_middle (struct slbuf *slbuf, char *beg, char *lim,
               fwrite_errno (slbuf, cur, 1, b - cur);
             }
 
-          pr_sgr_start_if (match_color);
+          pr_sgr_start_if (slbuf, match_color);
           fwrite_errno (slbuf, b, 1, match_size);
-          pr_sgr_end_if (match_color);
+          pr_sgr_end_if (slbuf, match_color);
           if (only_matching)
             putchar_errno (slbuf, eolbyte);
         }
@@ -1233,10 +1252,10 @@ print_line_tail (struct slbuf *slbuf, char *beg, const char *lim, const char *li
 
   if (tail_size > 0)
     {
-      pr_sgr_start (line_color);
+      pr_sgr_start (slbuf, line_color);
       fwrite_errno (slbuf, beg, 1, tail_size);
       beg += tail_size;
-      pr_sgr_end (line_color);
+      pr_sgr_end (slbuf, line_color);
     }
 
   return beg;
@@ -1338,9 +1357,9 @@ prtext (struct slbuf *slbuf, char *beg, char *lim)
       if ((0 <= out_before || 0 <= out_after) && used
           && p != lastout && group_separator)
         {
-          pr_sgr_start_if (sep_color);
+          pr_sgr_start_if (slbuf, sep_color);
           fputs_errno (slbuf, group_separator);
-          pr_sgr_end_if (sep_color);
+          pr_sgr_end_if (slbuf, sep_color);
           putchar_errno (slbuf, '\n');
         }
 
@@ -1502,8 +1521,9 @@ grep (struct thread *td, struct slbuf *slbuf, int fd, struct stat const *st, boo
           && (buf_has_nulls (bufbeg, buflim - bufbeg)
               || (firsttime && file_must_have_nulls (td, buflim - bufbeg, fd, st))))
         {
-          if (binary_files == WITHOUT_MATCH_BINARY_FILES)
+          if (binary_files == WITHOUT_MATCH_BINARY_FILES) {
             return 0;
+          }
           if (!count_matches)
             done_on_match = out_quiet = true;
           nlines_first_null = nlines;
@@ -1547,8 +1567,9 @@ grep (struct thread *td, struct slbuf *slbuf, int fd, struct stat const *st, boo
           if (pending)
             prpending (slbuf, lim);
           if ((!outleft && !pending)
-              || (done_on_match && MAX (0, nlines_first_null) < nlines))
+              || (done_on_match && MAX (0, nlines_first_null) < nlines)) {
             goto finish_grep;
+          }
         }
 
       /* The last OUT_BEFORE lines at the end of the buffer will be needed as
@@ -1729,7 +1750,7 @@ grepfile (struct thread *td, struct slbuf *slbuf, int dirdesc, char const *name,
 /* Read all data from FD, with status ST.  Return true if successful,
    false (setting errno) otherwise.  */
 static bool
-drain_input (int fd, struct stat const *st)
+drain_input (struct thread *td, int fd, struct stat const *st)
 {
   ssize_t nbytes;
   if (S_ISFIFO (st->st_mode) && dev_null_output)
@@ -1747,9 +1768,27 @@ drain_input (int fd, struct stat const *st)
         }
 #endif
     }
-  while ((nbytes = safe_read (fd, buffer, bufalloc)))
+  do {
+        struct uio auio;
+        struct iovec aiov;
+
+        aiov.iov_base = buffer;
+        aiov.iov_len = bufalloc;
+        auio.uio_iov = &aiov;
+        auio.uio_iovcnt = 1;
+        auio.uio_resid = bufalloc;
+        auio.uio_segflg = UIO_SYSSPACE;
+
+        if(kern_preadv(td, fd, &auio, -1)) {
+            break;
+        }
+        nbytes = bufalloc - auio.uio_resid;
+  } while (nbytes);
+#if 0
+  while ((nbytes = safe_read (td, fd, buffer, bufalloc, -1)))
     if (nbytes == SAFE_READ_ERROR)
       return false;
+#endif
   return true;
 }
 
@@ -1768,7 +1807,7 @@ finalize_input (struct thread *td, int fd, struct stat const *st, bool ineof)
                  || (kern_lseek (td, fd, 0, SEEK_END) < 0
                      /* Linux proc file system has EINVAL (Bug#25180).  */
                      && errno != EINVAL))
-             && ! drain_input (fd, st))
+             && ! drain_input (td, fd, st))
           : (bufoffset != after_last_match && !seek_failed
              && kern_lseek (td, fd, after_last_match, SEEK_SET) < 0)))
     suppressible_error (EFAULT);
@@ -1834,6 +1873,7 @@ grepdesc (struct thread *td, struct slbuf *slbuf, int desc, bool command_line)
         suppressible_error (errno);
       return status;
 #endif
+      uprintf("Trying to recurse into subdirectories!\n");
     }
   if (desc != STDIN_FILENO
       && ((directories == SKIP_DIRECTORIES && S_ISDIR (st.st_mode))
@@ -2992,8 +3032,13 @@ void init_globals(void) {
   pagesize = psize;
   bufalloc = ALIGN_TO (INITIAL_BUFSIZE, pagesize) + pagesize + sizeof (uword);
   buffer = xmalloc (bufalloc);
+  memset(buffer, 0, bufalloc);
+
 
   init_localeinfo (&localeinfo);
+
+  out_after = out_before = -1;
+  max_count = INTMAX_MAX;
 }
 
 void clean_globals(void) {

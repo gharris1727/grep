@@ -142,8 +142,6 @@ GEAcompile (char *pattern, size_t size, reg_syntax_t syntax_bits)
       else
         len = patlim - p;
 
-      uprintf("%ld %ld %p %p %ld\n", palloc, dc->pcount, dc->patterns, &palloc, sizeof (struct re_pattern_buffer));
-
       if (palloc <= dc->pcount)
         dc->patterns = x2nrealloc (dc->patterns, &palloc, sizeof (struct re_pattern_buffer));
       struct re_pattern_buffer *pat = &dc->patterns[dc->pcount];
