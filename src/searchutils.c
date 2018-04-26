@@ -22,7 +22,7 @@
 #define SEARCH_INLINE _GL_EXTERN_INLINE
 #define SYSTEM_INLINE _GL_EXTERN_INLINE
 #include "search.h"
-#include <match.h>
+#include "../../match.h"
 
 /* For each byte B, sbwordchar[B] is true if B is a single-byte
    character that is a word constituent, and is false otherwise.  */

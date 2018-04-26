@@ -22,7 +22,7 @@
 
 #include <stdbool.h>
 #include <slbuf.h>
-#include <match.h>
+#include "../../match.h"
 
 bool grepfile (struct grep_ctx *, int, char const *, bool, bool);
 bool grepdesc (struct grep_ctx *, int, bool);

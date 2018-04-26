@@ -53,7 +53,6 @@
 //#include "xstrtol.h"
 
 #include <slbuf.h>
-#include <match.h>
 #include <sys/proc.h>
 #include <sys/syscallsubr.h>
 
