@@ -47,18 +47,14 @@ struct kwsearch
    description of the compiled pattern.  */
 
 void *
-Fcompile (char *pattern, size_t size, reg_syntax_t ignored)
+Fcompile (struct grep_ctx *ctx, char *pattern, size_t size, reg_syntax_t ignored)
 {
-#if !NO_LOCALE
   kwset_t kwset;
-#endif
   ptrdiff_t total = size;
   char *buf = NULL;
   size_t bufalloc = 0;
 
-#if !NO_LOCALE
-  kwset = kwsinit (true);
-#endif
+  kwset = kwsinit (ctx, true);
 
   char const *p = pattern;
   do
@@ -77,9 +73,9 @@ Fcompile (char *pattern, size_t size, reg_syntax_t ignored)
           total = 0;
         }
 
-      if (match_lines)
+      if (ctx->options[MATCH_LINE])
         {
-          if (eolbyte == '\n' && pattern < p && sep)
+          if (!ctx->options[NULL_BOUND] && pattern < p && sep)
             p--;
           else
             {
@@ -88,10 +84,10 @@ Fcompile (char *pattern, size_t size, reg_syntax_t ignored)
                   free (buf);
                   bufalloc = len + 2;
                   buf = x2realloc (NULL, &bufalloc);
-                  buf[0] = eolbyte;
+                  buf[0] = ctx->options[NULL_BOUND] ? '\0' : '\n';
                 }
               memcpy (buf + 1, p, len);
-              buf[len + 1] = eolbyte;
+              buf[len + 1] = ctx->options[NULL_BOUND] ? '\0' : '\n';
               p = buf;
             }
           len += 2;
@@ -109,7 +105,7 @@ Fcompile (char *pattern, size_t size, reg_syntax_t ignored)
   ptrdiff_t words = kwswords (kwset);
 #endif
 
-  if (match_icase)
+  if (ctx->options[CASE_INSENSITIVE])
     {
       /* For each pattern character C that has a case folded
          counterpart F that is multibyte and so cannot easily be
@@ -133,7 +129,7 @@ Fcompile (char *pattern, size_t size, reg_syntax_t ignored)
 #if NO_LOCALE
           NO_LOC_ERR;
 #else
-          wint_t wc = localeinfo.sbctowc[c];
+          wint_t wc = ctx->localeinfo.sbctowc[c];
           wchar_t folded[CASE_FOLDED_BUFSIZE];
 
           for (int i = case_folded_counterparts (wc, folded); 0 <= --i; )
@@ -167,12 +163,12 @@ Fcompile (char *pattern, size_t size, reg_syntax_t ignored)
    size into *MATCH_SIZE.  If not found, return SIZE_MAX.
    If START_PTR is nonnull, start searching there.  */
 size_t
-Fexecute (void *vcp, char const *buf, size_t size, size_t *match_size,
+Fexecute (struct grep_ctx *ctx, void *vcp, char const *buf, size_t size, size_t *match_size,
           char const *start_ptr)
 {
   char const *beg, *end, *mb_start;
   ptrdiff_t len;
-  char eol = eolbyte;
+  char eol = ctx->options[NULL_BOUND] ? '\0' : '\n';
   struct kwsmatch kwsmatch;
   size_t ret_val;
   bool mb_check;
@@ -180,22 +176,22 @@ Fexecute (void *vcp, char const *buf, size_t size, size_t *match_size,
   struct kwsearch *kwsearch = vcp;
   kwset_t kwset = kwsearch->kwset;
 
-  if (match_lines)
+  if (ctx->options[MATCH_LINE])
     mb_check = longest = false;
   else
     {
-      mb_check = localeinfo.multibyte & !localeinfo.using_utf8;
-      longest = mb_check | !!start_ptr | match_words;
+      mb_check = ctx->localeinfo.multibyte & !ctx->localeinfo.using_utf8;
+      longest = mb_check | !!start_ptr | ctx->options[MATCH_WORD];
     }
 
   for (mb_start = beg = start_ptr ? start_ptr : buf; beg <= buf + size; beg++)
     {
-      ptrdiff_t offset = kwsexec (kwset, beg - match_lines,
-                                  buf + size - beg + match_lines, &kwsmatch,
+      ptrdiff_t offset = kwsexec (kwset, beg - ctx->options[MATCH_LINE],
+                                  buf + size - beg + ctx->options[MATCH_LINE], &kwsmatch,
                                   longest);
       if (offset < 0)
         break;
-      len = kwsmatch.size[0] - 2 * match_lines;
+      len = kwsmatch.size[0] - 2 * ctx->options[MATCH_LINE];
 
       if (kwsearch->words <= kwsmatch.index)
         {
@@ -205,17 +201,15 @@ Fexecute (void *vcp, char const *buf, size_t size, size_t *match_size,
              on the DFA code, which can.  */
           if (! kwsearch->re)
             {
-              fgrep_to_grep_pattern (&kwsearch->pattern, &kwsearch->size);
-              kwsearch->re = GEAcompile (kwsearch->pattern, kwsearch->size,
+
+              fgrep_to_grep_pattern (ctx, &kwsearch->pattern, &kwsearch->size);
+              kwsearch->re = GEAcompile (ctx, kwsearch->pattern, kwsearch->size,
                                          RE_SYNTAX_GREP);
             }
-          return EGexecute (kwsearch->re, buf, size, match_size, start_ptr);
+          return EGexecute (ctx, kwsearch->re, buf, size, match_size, start_ptr);
         }
 
-#if NO_LOCALE
-      NO_LOC_ERR;
-#else
-      if (mb_check && mb_goback (&mb_start, beg + offset, buf + size) != 0)
+      if (mb_check && mb_goback (&ctx->localeinfo, &mb_start, beg + offset, buf + size) != 0)
         {
           /* We have matched a single byte that is not at the beginning of a
              multibyte character.  mb_goback has advanced MB_START past that
@@ -233,31 +227,27 @@ Fexecute (void *vcp, char const *buf, size_t size, size_t *match_size,
           beg = mb_start - 1;
           continue;
         }
-#endif
       beg += offset;
-      if (!!start_ptr & !match_words)
+      if (!!start_ptr & !ctx->options[MATCH_WORD])
         goto success_in_beg_and_len;
-      if (match_lines)
+      if (ctx->options[MATCH_LINE])
         {
           len += start_ptr == NULL;
           goto success_in_beg_and_len;
         }
-      if (! match_words)
+      if (! ctx->options[MATCH_WORD])
         goto success;
 
-#if NO_LOCALE
-      NO_LOC_ERR;
-#else
       /* Succeed if the preceding and following characters are word
          constituents.  If the following character is not a word
          constituent, keep trying with shorter matches.  */
       char const *bol = memrchr (mb_start, eol, beg - mb_start);
       if (bol)
         mb_start = bol + 1;
-      if (! wordchar_prev (mb_start, beg, buf + size))
+      if (! wordchar_prev (&ctx->localeinfo, mb_start, beg, buf + size))
         for (;;)
           {
-            if (! wordchar_next (beg + len, buf + size))
+            if (! wordchar_next (&ctx->localeinfo, beg + len, buf + size))
               {
                 if (start_ptr)
                   goto success_in_beg_and_len;
@@ -275,8 +265,7 @@ Fexecute (void *vcp, char const *buf, size_t size, size_t *match_size,
       /* No word match was found at BEG.  Skip past word constituents,
          since they cannot precede the next match and not skipping
          them could make things much slower.  */
-      beg += wordchars_size (beg, buf + size);
-#endif
+      beg += wordchars_size (&ctx->localeinfo, beg, buf + size);
       mb_start = beg;
     } /* for (beg in buf) */
 

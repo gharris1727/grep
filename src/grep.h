@@ -22,26 +22,18 @@
 
 #include <stdbool.h>
 #include <slbuf.h>
+#include <match.h>
 
-/* The following flags are exported from grep for the matchers
-   to look at. */
-extern bool match_icase;	/* -i */
-extern bool match_words;	/* -w */
-extern bool match_lines;	/* -x */
-extern char eolbyte;		/* -z */
+bool grepfile (struct grep_ctx *, int, char const *, bool, bool);
+bool grepdesc (struct grep_ctx *, int, bool);
 
-extern char const *pattern_file_name (size_t, size_t *);
+void parse_grep_colors (struct grep_ctx *, const char *);
+void init_globals(struct grep_ctx *);
+void clean_globals(struct grep_ctx *);
 
-typedef void *(*compile_fp_t) (char *, size_t, unsigned long int);
-typedef size_t (*execute_fp_t) (void *, char const *, size_t, size_t *,
-        char const *);
-
-bool grepfile (struct thread *td, struct slbuf *slbuf, int dirdesc, char const *name, bool follow, bool command_line);
-bool grepdesc (struct thread *, struct slbuf *slbuf, int, bool);
-
-void parse_grep_colors (void);
-void init_globals(void);
-void clean_globals(void);
+void color_cap_mt_fct (struct grep_ctx *ctx);
+void color_cap_rv_fct (struct grep_ctx *ctx);
+void color_cap_ne_fct (struct grep_ctx *ctx);
 
 typedef struct
 {

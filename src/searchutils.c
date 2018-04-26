@@ -22,6 +22,7 @@
 #define SEARCH_INLINE _GL_EXTERN_INLINE
 #define SYSTEM_INLINE _GL_EXTERN_INLINE
 #include "search.h"
+#include <match.h>
 
 /* For each byte B, sbwordchar[B] is true if B is a single-byte
    character that is a word constituent, and is false otherwise.  */
@@ -29,28 +30,25 @@ static bool sbwordchar[NCHAR];
 
 /* Whether -w considers WC to be a word constituent.  */
 static bool
-wordchar (wint_t wc)
+wordchar (struct localeinfo *localeinfo, wint_t wc)
 {
-  return wc == L'_';// || iswalnum (wc);
+  return wc == L'_' || iswalnum (wc);
 }
 
 void
-wordinit (void)
+wordinit (struct localeinfo *localeinfo)
 {
   for (int i = 0; i < NCHAR; i++)
-    sbwordchar[i] = wordchar (localeinfo.sbctowc[i]);
+    sbwordchar[i] = wordchar (localeinfo, localeinfo->sbctowc[i]);
 }
 
 kwset_t
-kwsinit (bool mb_trans)
+kwsinit (struct grep_ctx *ctx, bool mb_trans)
 {
   char *trans = NULL;
 
-  if (match_icase && (MB_CUR_MAX == 1 || mb_trans))
+  if (ctx->options[CASE_INSENSITIVE] && (MB_CUR_MAX == 1 || mb_trans))
     {
-#if NO_LOCALE
-        NO_LOC_ERR;
-#else
       trans = xmalloc (NCHAR);
       if (MB_CUR_MAX == 1)
         for (int i = 0; i < NCHAR; i++)
@@ -58,7 +56,7 @@ kwsinit (bool mb_trans)
       else
         for (int i = 0; i < NCHAR; i++)
           {
-            wint_t wc = localeinfo.sbctowc[i];
+            wint_t wc = ctx->localeinfo.sbctowc[i];
             wint_t uwc = towupper (wc);
             if (uwc != wc)
               {
@@ -70,7 +68,6 @@ kwsinit (bool mb_trans)
             else
               trans[i] = i;
           }
-#endif
     }
 
   return kwsalloc (trans);
@@ -88,7 +85,7 @@ kwsinit (bool mb_trans)
    END if there is no such boundary.  When returning a negative value,
    leave *MB_START alone.  */
 ptrdiff_t
-mb_goback (char const **mb_start, char const *cur, char const *end)
+mb_goback (struct localeinfo *localeinfo, char const **mb_start, char const *cur, char const *end)
 {
   const char *p = *mb_start;
   const char *p0 = p;
@@ -96,7 +93,7 @@ mb_goback (char const **mb_start, char const *cur, char const *end)
   if (cur <= p)
     return cur - p;
 
-  if (localeinfo.using_utf8)
+  if (localeinfo->using_utf8)
     {
       p = cur;
 
@@ -105,7 +102,7 @@ mb_goback (char const **mb_start, char const *cur, char const *end)
           if ((cur[-i] & 0xc0) != 0x80)
             {
               mbstate_t mbs = { {0} };
-              size_t clen = mb_clen (cur - i, end - (cur - i), &mbs);
+              size_t clen = mb_clen (localeinfo, cur - i, end - (cur - i), &mbs);
               if (i < clen && clen < (size_t) -2)
                 {
                   p0 = cur - i;
@@ -119,7 +116,7 @@ mb_goback (char const **mb_start, char const *cur, char const *end)
       mbstate_t mbs = { {0} };
       do
         {
-          size_t clen = mb_clen (p, end - p, &mbs);
+          size_t clen = mb_clen (localeinfo, p, end - p, &mbs);
 
           if ((size_t) -2 <= clen)
             {
@@ -142,7 +139,7 @@ mb_goback (char const **mb_start, char const *cur, char const *end)
    If COUNTALL, examine as many as possible; otherwise, examine at most one.
    Return the total number of bytes in the examined characters.  */
 static size_t
-wordchars_count (char const *buf, char const *end, bool countall)
+wordchars_count (struct localeinfo *localeinfo, char const *buf, char const *end, bool countall)
 {
   size_t n = 0;
   mbstate_t mbs = { {0} };
@@ -151,13 +148,13 @@ wordchars_count (char const *buf, char const *end, bool countall)
       unsigned char b = buf[n];
       if (sbwordchar[b])
         n++;
-      else if (localeinfo.sbclen[b] != -2)
+      else if (localeinfo->sbclen[b] != -2)
         break;
       else
         {
           wchar_t wc = 0;
           size_t wcbytes = mbrtowc (&wc, buf + n, end - buf - n, &mbs);
-          if (!wordchar (wc))
+          if (!wordchar (localeinfo, wc))
             break;
           n += wcbytes + !wcbytes;
         }
@@ -171,32 +168,32 @@ wordchars_count (char const *buf, char const *end, bool countall)
    word constituents.  Return the total number of bytes in the prefix.
    The buffer ends at END.  */
 size_t
-wordchars_size (char const *buf, char const *end)
+wordchars_size (struct localeinfo *localeinfo, char const *buf, char const *end)
 {
-  return wordchars_count (buf, end, true);
+  return wordchars_count (localeinfo, buf, end, true);
 }
 
 /* If BUF starts with a word constituent, return the number of bytes
    used to represent it; otherwise, return zero.  The buffer ends at END.  */
 size_t
-wordchar_next (char const *buf, char const *end)
+wordchar_next (struct localeinfo *localeinfo, char const *buf, char const *end)
 {
-  return wordchars_count (buf, end, false);
+  return wordchars_count (localeinfo, buf, end, false);
 }
 
 /* In the buffer BUF, return nonzero if the character whose encoding
    contains the byte before CUR is a word constituent.  The buffer
    ends at END.  */
 size_t
-wordchar_prev (char const *buf, char const *cur, char const *end)
+wordchar_prev (struct localeinfo *localeinfo, char const *buf, char const *cur, char const *end)
 {
   if (buf == cur)
     return 0;
   unsigned char b = *--cur;
-  if (! localeinfo.multibyte
-      || (localeinfo.using_utf8 && localeinfo.sbclen[b] != -2))
+  if (! localeinfo->multibyte
+      || (localeinfo->using_utf8 && localeinfo->sbclen[b] != -2))
     return sbwordchar[b];
   char const *p = buf;
-  cur -= mb_goback (&p, cur, end);
-  return wordchar_next (cur, end);
+  cur -= mb_goback (localeinfo, &p, cur, end);
+  return wordchar_next (localeinfo, cur, end);
 }

@@ -45,39 +45,41 @@ _GL_INLINE_HEADER_BEGIN
 typedef signed char mb_len_map_t;
 
 /* searchutils.c */
-extern void wordinit (void);
-extern kwset_t kwsinit (bool);
-extern size_t wordchars_size (char const *, char const *) _GL_ATTRIBUTE_PURE;
-extern size_t wordchar_next (char const *, char const *) _GL_ATTRIBUTE_PURE;
-extern size_t wordchar_prev (char const *, char const *, char const *)
+extern void wordinit (struct localeinfo *);
+extern kwset_t kwsinit (struct grep_ctx *ctx, bool);
+extern size_t wordchars_size (struct localeinfo *, char const *, char const *) _GL_ATTRIBUTE_PURE;
+extern size_t wordchar_next (struct localeinfo *, char const *, char const *) _GL_ATTRIBUTE_PURE;
+extern size_t wordchar_prev (struct localeinfo *, char const *, char const *, char const *)
   _GL_ATTRIBUTE_PURE;
-extern ptrdiff_t mb_goback (char const **, char const *, char const *);
+extern ptrdiff_t mb_goback (struct localeinfo *, char const **, char const *, char const *);
 #endif
 
 /* dfasearch.c */
-extern void *GEAcompile (char *, size_t, reg_syntax_t);
-extern size_t EGexecute (void *, char const *, size_t, size_t *, char const *);
+extern void *GEAcompile (struct grep_ctx *, char *, size_t, reg_syntax_t);
+extern size_t EGexecute (struct grep_ctx *, void *, char const *, size_t, size_t *, char const *);
 
 /* kwsearch.c */
-extern void *Fcompile (char *, size_t, reg_syntax_t);
-extern size_t Fexecute (void *, char const *, size_t, size_t *, char const *);
+extern void *Fcompile (struct grep_ctx *, char *, size_t, reg_syntax_t);
+extern size_t Fexecute (struct grep_ctx *, void *, char const *, size_t, size_t *, char const *);
 
 /* pcresearch.c */
-extern void *Pcompile (char *, size_t, reg_syntax_t);
-extern size_t Pexecute (void *, char const *, size_t, size_t *, char const *);
+extern void *Pcompile (struct grep_ctx *, char *, size_t, reg_syntax_t);
+extern size_t Pexecute (struct grep_ctx *, void *, char const *, size_t, size_t *, char const *);
 
 /* grep.c */
+#if 0
 extern struct localeinfo localeinfo;
-extern void fgrep_to_grep_pattern (char **, size_t *);
+#endif
+extern void fgrep_to_grep_pattern (struct grep_ctx *ctx, char **, size_t *);
 
 /* Return the number of bytes in the character at the start of S, which
    is of size N.  N must be positive.  MBS is the conversion state.
    This acts like mbrlen, except it returns 1 when mbrlen would return 0,
    and it is typically faster because of the cache.  */
 SEARCH_INLINE size_t
-mb_clen (char const *s, size_t n, mbstate_t *mbs)
+mb_clen (struct localeinfo *localeinfo, char const *s, size_t n, mbstate_t *mbs)
 {
-  size_t len = localeinfo.sbclen[to_uchar (*s)];
+  size_t len = localeinfo->sbclen[to_uchar (*s)];
   return len == (size_t) -2 ? mbrlen (s, n, mbs) : len;
 }
 

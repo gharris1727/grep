@@ -70,14 +70,12 @@ dfawarn (char const *mesg)
    to find those strings, and thus quickly filter out impossible
    matches. */
 static void
-kwsmusts (struct dfa_comp *dc)
+kwsmusts (struct grep_ctx *ctx, struct dfa_comp *dc)
 {
   struct dfamust *dm = dfamust (dc->dfa);
   if (!dm)
     return;
-#if !NO_LOCALE
-  dc->kwset = kwsinit (false);
-#endif
+  dc->kwset = kwsinit (ctx, false);
   if (dm->exact)
     {
       /* Prepare a substring whose presence implies a match.
@@ -88,12 +86,12 @@ kwsmusts (struct dfa_comp *dc)
       ptrdiff_t new_len = old_len + dm->begline + dm->endline;
       char *must = xmalloc (new_len);
       char *mp = must;
-      *mp = eolbyte;
+      *mp = ctx->options[NULL_BOUND] ? '\0' : '\n';
       mp += dm->begline;
       dc->begline |= dm->begline;
       memcpy (mp, dm->must, old_len);
       if (dm->endline)
-        mp[old_len] = eolbyte;
+        mp[old_len] = ctx->options[NULL_BOUND] ? '\0' : '\n';
       kwsincr (dc->kwset, must, new_len);
       free (must);
     }
@@ -108,18 +106,18 @@ kwsmusts (struct dfa_comp *dc)
 }
 
 void *
-GEAcompile (char *pattern, size_t size, reg_syntax_t syntax_bits)
+GEAcompile (struct grep_ctx *ctx, char *pattern, size_t size, reg_syntax_t syntax_bits)
 {
   char *motif;
   struct dfa_comp *dc = xcalloc (1, sizeof (*dc));
 
   dc->dfa = dfaalloc ();
 
-  if (match_icase)
+  if (ctx->options[CASE_INSENSITIVE])
     syntax_bits |= RE_ICASE;
   re_set_syntax (syntax_bits);
-  int dfaopts = eolbyte ? 0 : DFA_EOL_NUL;
-  dfasyntax (dc->dfa, &localeinfo, syntax_bits, dfaopts);
+  int dfaopts = ctx->options[NULL_BOUND] ? DFA_EOL_NUL : 0;
+  dfasyntax (dc->dfa, &ctx->localeinfo, syntax_bits, dfaopts);
 
   /* For GNU regex, pass the patterns separately to detect errors like
      "[\nallo\n]\n", where the patterns are "[", "allo" and "]", and
@@ -149,22 +147,26 @@ GEAcompile (char *pattern, size_t size, reg_syntax_t syntax_bits)
       pat->allocated = 0;
 
       /* Do not use a fastmap with -i, to work around glibc Bug#20381.  */
-      pat->fastmap = match_icase ? NULL : xmalloc (UCHAR_MAX + 1);
+      pat->fastmap = ctx->options[CASE_INSENSITIVE] ? NULL : xmalloc (UCHAR_MAX + 1);
 
       pat->translate = NULL;
 
       char const *err = re_compile_pattern (p, len, pat);
       if (err)
         {
+#if 0
           /* With patterns specified only on the command line, emit the bare
              diagnostic.  Otherwise, include a filename:lineno: prefix.  */
           size_t lineno;
           char const *pat_filename = pattern_file_name (dc->pcount + 1,
                                                         &lineno);
           if (*pat_filename == '\0')
+#endif
             error (0, 0, "%s", err);
+#if 0
           else
             error (0, 0, "%s:%zu: %s", pat_filename, lineno, err);
+#endif
           compilation_failed = true;
         }
       dc->pcount++;
@@ -179,7 +181,7 @@ GEAcompile (char *pattern, size_t size, reg_syntax_t syntax_bits)
      for the DFA matcher that will quickly throw out cases that won't work.
      Then if DFA succeeds we do some hairy stuff using the regex matcher
      to decide whether the match should really count. */
-  if (match_words || match_lines)
+  if (ctx->options[MATCH_WORD] || ctx->options[MATCH_LINE])
     {
       static char const line_beg_no_bk[] = "^(";
       static char const line_end_no_bk[] = ")$";
@@ -192,12 +194,12 @@ GEAcompile (char *pattern, size_t size, reg_syntax_t syntax_bits)
       int bk = !(syntax_bits & RE_NO_BK_PARENS);
       char *n = xmalloc (sizeof word_beg_bk - 1 + size + sizeof word_end_bk);
 
-      strcpy (n, match_lines ? (bk ? line_beg_bk : line_beg_no_bk)
+      strcpy (n, ctx->options[MATCH_LINE] ? (bk ? line_beg_bk : line_beg_no_bk)
                              : (bk ? word_beg_bk : word_beg_no_bk));
       size_t total = strlen (n);
       memcpy (n + total, pattern, size);
       total += size;
-      strcpy (n + total, match_lines ? (bk ? line_end_bk : line_end_no_bk)
+      strcpy (n + total, ctx->options[MATCH_LINE] ? (bk ? line_end_bk : line_end_no_bk)
                                      : (bk ? word_end_bk : word_end_no_bk));
       total += strlen (n + total);
       pattern = motif = n;
@@ -207,7 +209,7 @@ GEAcompile (char *pattern, size_t size, reg_syntax_t syntax_bits)
     motif = NULL;
 
   dfacomp (pattern, size, dc->dfa, 1);
-  kwsmusts (dc);
+  kwsmusts (ctx, dc);
 
   free (motif);
 
@@ -215,11 +217,11 @@ GEAcompile (char *pattern, size_t size, reg_syntax_t syntax_bits)
 }
 
 size_t
-EGexecute (void *vdc, char const *buf, size_t size, size_t *match_size,
+EGexecute (struct grep_ctx *ctx, void *vdc, char const *buf, size_t size, size_t *match_size,
            char const *start_ptr)
 {
   char const *buflim, *beg, *end, *ptr, *match, *best_match, *mb_start;
-  char eol = eolbyte;
+  char eol = ctx->options[NULL_BOUND] ? '\0' : '\n';
   regoff_t start;
   size_t len, best_len;
   struct kwsmatch kwsm;
@@ -279,16 +281,12 @@ EGexecute (void *vdc, char const *buf, size_t size, size_t *match_size,
 
               if (exact_kwset_match)
                 {
-                  if (!localeinfo.multibyte | localeinfo.using_utf8)
+                  if (!ctx->localeinfo.multibyte | ctx->localeinfo.using_utf8)
                     goto success;
                   if (mb_start < beg)
                     mb_start = beg;
-#if NO_LOCALE
-                  NO_LOC_ERR;
-#else
-                  if (mb_goback (&mb_start, match, buflim) == 0)
+                  if (mb_goback (&ctx->localeinfo, &mb_start, match, buflim) == 0)
                     goto success;
-#endif
                   /* The matched line starts in the middle of a multibyte
                      character.  Perform the DFA search starting from the
                      beginning of the next character.  */
@@ -361,7 +359,7 @@ EGexecute (void *vdc, char const *buf, size_t size, size_t *match_size,
       for (i = 0; i < dc->pcount; i++)
         {
           dc->patterns[i].not_eol = 0;
-          dc->patterns[i].newline_anchor = eolbyte == '\n';
+          dc->patterns[i].newline_anchor = !ctx->options[NULL_BOUND];
           start = re_search (&dc->patterns[i], beg, end - beg - 1,
                              ptr - beg, end - ptr - 1, &dc->regs);
           if (start < -1)
@@ -372,10 +370,10 @@ EGexecute (void *vdc, char const *buf, size_t size, size_t *match_size,
               match = beg + start;
               if (match > best_match)
                 continue;
-              if (start_ptr && !match_words)
+              if (start_ptr && !ctx->options[MATCH_WORD])
                 goto assess_pattern_match;
-              if ((!match_lines && !match_words)
-                  || (match_lines && len == end - ptr - 1))
+              if ((!ctx->options[MATCH_LINE] && !ctx->options[MATCH_WORD])
+                  || (ctx->options[MATCH_LINE] && len == end - ptr - 1))
                 {
                   match = ptr;
                   len = end - ptr;
@@ -388,17 +386,13 @@ EGexecute (void *vdc, char const *buf, size_t size, size_t *match_size,
                  (b) Several alternatives in the pattern might be valid at a
                  given point, and we may need to consider a shorter one to
                  find a word boundary.  */
-              if (!match_lines && match_words)
+              if (!ctx->options[MATCH_LINE] && ctx->options[MATCH_WORD])
                 while (match <= best_match)
                   {
                     regoff_t shorter_len = 0;
-#if NO_LOCALE
-                    NO_LOC_ERR;
-#else
-                    if (! wordchar_next (match + len, end - 1)
-                        && ! wordchar_prev (beg, match, end - 1))
+                    if (! wordchar_next (&ctx->localeinfo, match + len, end - 1)
+                        && ! wordchar_prev (&ctx->localeinfo, beg, match, end - 1))
                       goto assess_pattern_match;
-#endif
                     if (len > 0)
                       {
                         /* Try a shorter length anchored at the same place. */

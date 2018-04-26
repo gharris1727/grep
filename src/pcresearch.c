@@ -114,7 +114,7 @@ jit_exec (struct pcre_comp *pc, char const *subject, int search_bytes,
 #endif
 
 void *
-Pcompile (char *pattern, size_t size, reg_syntax_t ignored)
+Pcompile (struct grep_ctx *ctx, char *pattern, size_t size, reg_syntax_t ignored)
 {
 #if !HAVE_LIBPCRE
   die (EXIT_TROUBLE, 0,
@@ -209,7 +209,7 @@ Pcompile (char *pattern, size_t size, reg_syntax_t ignored)
 }
 
 size_t
-Pexecute (void *vcp, char const *buf, size_t size, size_t *match_size,
+Pexecute (struct grep_ctx *ctx, void *vcp, char const *buf, size_t size, size_t *match_size,
           char const *start_ptr)
 {
 #if !HAVE_LIBPCRE
