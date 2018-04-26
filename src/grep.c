@@ -93,7 +93,6 @@ static bool align_tabs;
 
 /* Print width of line numbers and byte offsets.  Nonzero if ALIGN_TABS.  */
 static int offset_width;
-#endif
 
 /* See below */
 struct FL_pair
@@ -102,7 +101,6 @@ struct FL_pair
     size_t lineno;
   };
 
-#if 0
 /* A list of lineno,filename pairs corresponding to -f FILENAME
    arguments. Since we store the concatenation of all patterns in
    a single array, KEYS, be they from the command line via "-e PAT"
@@ -522,24 +520,26 @@ static struct option const long_options[] =
 #endif
 
 
+#if 0
 /* Define flags declared in grep.h. */
 bool match_icase;
 bool match_words;
 bool match_lines;
 char eolbyte;
+#endif
 
+#if 0
 /* For error messages. */
 /* The input file name, or (if standard input) null or a --label argument.  */
 static char const *filename;
-#if 0
 /* Omit leading "./" from file names in diagnostics.  */
 static bool omit_dot_slash;
-#endif
 static bool errseen;
 
 /* True if output from the current input file has been suppressed
    because an output line had an encoding error.  */
 static bool encoding_error_output;
+#endif
 
 enum directories_type
   {
@@ -601,19 +601,21 @@ enum { SEEK_DATA = SEEK_SET };
 enum { SEEK_HOLE = SEEK_SET };
 #endif
 
+#if 0
 /* True if lseek with SEEK_CUR or SEEK_DATA failed on the current input.  */
 static bool seek_failed;
 static bool seek_data_failed;
 
 execute_fp_t execute;
 void *compiled_pattern;
+#endif
 
 static char const *
-input_filename (void)
+input_filename (struct grep_ctx *ctx)
 {
-  if (!filename)
-    filename = _("(standard input)");
-  return filename;
+  if (!ctx->filename)
+    ctx->filename = _("(standard input)");
+  return ctx->filename;
 }
 
 /* Unless requested, diagnose an error about the input file.  */
@@ -621,8 +623,8 @@ static void
 suppressible_error (struct grep_ctx *ctx, int errnum)
 {
   if (! ctx->options[SUPPRESS_ERRORS])
-    error (0, errnum, "%s", input_filename ());
-  errseen = true;
+    error (0, errnum, "%s", input_filename (ctx));
+  ctx->errseen = true;
 }
 
 #if 0
@@ -654,7 +656,9 @@ clean_up_stdout (void)
 /* An unsigned type suitable for fast matching.  */
 typedef uintmax_t uword;
 
+#if 0
 struct localeinfo localeinfo;
+#endif
 
 /* A mask to test for unibyte characters, with the pattern repeated to
    fill a uword.  For a multibyte character encoding where
@@ -664,11 +668,12 @@ struct localeinfo localeinfo;
    character if C & UNIBYTE_MASK is zero.  If the uword W is the
    concatenation of bytes, the bytes are all unibyte characters
    if W & UNIBYTE_MASK is zero.  */
-static uword unibyte_mask;
-
 #if 0
+static uword unibyte_mask;
+#endif
+
 static void
-initialize_unibyte_mask (void)
+initialize_unibyte_mask (struct grep_ctx *ctx)
 {
   /* For each encoding error I that MASK does not already match,
      accumulate I's most significant 1 bit by ORing it into MASK.
@@ -677,7 +682,7 @@ initialize_unibyte_mask (void)
   unsigned char mask = 0;
   int ms1b = 1;
   for (int i = 1; i <= UCHAR_MAX; i++)
-    if ((localeinfo.sbclen[i] != 1) & ! (mask & i))
+    if ((ctx->localeinfo.sbclen[i] != 1) & ! (mask & i))
       {
         while (ms1b * 2 <= i)
           ms1b *= 2;
@@ -688,15 +693,14 @@ initialize_unibyte_mask (void)
      cry wolf and it may not be optimal.  Build a uword-length mask by
      repeating MASK.  */
   uword uword_max = -1;
-  unibyte_mask = uword_max / UCHAR_MAX * mask;
+  ctx->unibyte_mask = uword_max / UCHAR_MAX * mask;
 }
-#endif
 
 /* Skip the easy bytes in a buffer that is guaranteed to have a sentinel
    that is not easy, and return a pointer to the first non-easy byte.
    The easy bytes all have UNIBYTE_MASK off.  */
 static char const * _GL_ATTRIBUTE_PURE
-skip_easy_bytes (char const *buf)
+skip_easy_bytes (struct grep_ctx *ctx, char const *buf)
 {
   /* Search a byte at a time until the pointer is aligned, then a
      uword at a time until a match is found, then a byte at a time to
@@ -705,11 +709,11 @@ skip_easy_bytes (char const *buf)
   char const *p;
   uword const *s;
   for (p = buf; (uintptr_t) p % sizeof (uword) != 0; p++)
-    if (to_uchar (*p) & unibyte_mask)
+    if (to_uchar (*p) & ctx->unibyte_mask)
       return p;
-  for (s = CAST_ALIGNED (uword const *, p); ! (*s & unibyte_mask); s++)
+  for (s = CAST_ALIGNED (uword const *, p); ! (*s & ctx->unibyte_mask); s++)
     continue;
-  for (p = (char const *) s; ! (to_uchar (*p) & unibyte_mask); p++)
+  for (p = (char const *) s; ! (to_uchar (*p) & ctx->unibyte_mask); p++)
     continue;
   return p;
 }
@@ -718,16 +722,16 @@ skip_easy_bytes (char const *buf)
    BUF must be followed by at least sizeof (uword) bytes,
    the first of which may be modified.  */
 static bool
-buf_has_encoding_errors (char *buf, size_t size)
+buf_has_encoding_errors (struct grep_ctx *ctx, char *buf, size_t size)
 {
-  if (! unibyte_mask)
+  if (! ctx->unibyte_mask)
     return false;
 
   mbstate_t mbs = { {0} };
   size_t clen;
 
   buf[size] = -1;
-  for (char const *p = buf; (p = skip_easy_bytes (p)) < buf + size; p += clen)
+  for (char const *p = buf; (p = skip_easy_bytes (ctx, p)) < buf + size; p += clen)
     {
       clen = mbrlen (p, buf + size - p, &mbs);
       if ((size_t) -2 <= clen)
@@ -755,7 +759,7 @@ static bool
 file_must_have_nulls (struct grep_ctx *ctx, size_t size, int fd, struct stat const *st)
 {
   /* If the file has holes, it must contain a null byte somewhere.  */
-  if (SEEK_HOLE != SEEK_SET && !seek_failed
+  if (SEEK_HOLE != SEEK_SET && !ctx->seek_failed
       && usable_st_size (st) && size < st->st_size)
     {
       off_t cur = size;
@@ -871,15 +875,15 @@ static bool
 reset (struct grep_ctx *ctx, int fd, struct stat const *st)
 {
   bufbeg = buflim = ALIGN_TO (buffer + 1, pagesize);
-  bufbeg[-1] = eolbyte;
+  bufbeg[-1] = ctx->options[NULL_BOUND] ? '\0' : '\n';
   bufdesc = fd;
   bufoffset = fd == STDIN_FILENO ? kern_lseek (ctx->td, fd, 0, SEEK_CUR) : 0;
-  seek_failed = bufoffset < 0;
+  ctx->seek_failed = bufoffset < 0;
 
   /* Assume SEEK_DATA fails if SEEK_CUR does.  */
-  seek_data_failed = seek_failed;
+  ctx->seek_data_failed = ctx->seek_failed;
 
-  if (seek_failed)
+  if (ctx->seek_failed)
     {
 #if 0
       if (errno != ESPIPE)
@@ -955,7 +959,7 @@ fillbuf (struct grep_ctx *ctx, size_t save, struct stat const *st)
       readbuf = ALIGN_TO (newbuf + 1 + save, pagesize);
       bufbeg = readbuf - save;
       memmove (bufbeg, buffer + saved_offset, save);
-      bufbeg[-1] = eolbyte;
+      bufbeg[-1] = ctx->options[NULL_BOUND] ? '\0' : '\n';
       if (newbuf != buffer)
         {
           free (buffer);
@@ -991,7 +995,7 @@ fillbuf (struct grep_ctx *ctx, size_t save, struct stat const *st)
         break;
       totalnl = add_count (totalnl, fillsize);
 
-      if (SEEK_DATA != SEEK_SET && !seek_data_failed)
+      if (SEEK_DATA != SEEK_SET && !ctx->seek_data_failed)
         {
           /* Solaris SEEK_DATA fails with errno == ENXIO in a hole at EOF.  */
           off_t data_start = kern_lseek (ctx->td, bufdesc, bufoffset, SEEK_DATA);
@@ -1003,7 +1007,7 @@ fillbuf (struct grep_ctx *ctx, size_t save, struct stat const *st)
             data_start = kern_lseek (ctx->td, bufdesc, 0, SEEK_END);
 
           if (data_start < 0)
-            seek_data_failed = true;
+            ctx->seek_data_failed = true;
           else
             {
               totalnl = add_count (totalnl, data_start - bufoffset);
@@ -1080,10 +1084,11 @@ static bool dev_null_output;	/* Stdout is known to be /dev/null.  */
 static bool binary;		/* Use binary rather than text I/O.  */
 
 static void
-nlscan (char const *lim)
+nlscan (struct grep_ctx *ctx, char const *lim)
 {
   size_t newlines = 0;
   char const *beg;
+  char eolbyte = ctx->options[NULL_BOUND] ? '\0' : '\n';
   for (beg = lastnl; beg < lim; beg++)
     {
       beg = memchr (beg, eolbyte, lim - beg);
@@ -1100,7 +1105,7 @@ static void
 print_filename (struct grep_ctx *ctx)
 {
   pr_sgr_start_if (ctx, ctx->filename_color);
-  fputs_errno (ctx, input_filename ());
+  fputs_errno (ctx, input_filename (ctx));
   pr_sgr_end_if (ctx, ctx->filename_color);
 }
 
@@ -1137,11 +1142,11 @@ print_line_head (struct grep_ctx *ctx, char *beg, size_t len, char const *lim, c
   if (binary_files != TEXT_BINARY_FILES)
     {
       char ch = beg[len];
-      bool encoding_errors = buf_has_encoding_errors (beg, len);
+      bool encoding_errors = buf_has_encoding_errors (ctx, beg, len);
       beg[len] = ch;
       if (encoding_errors)
         {
-          encoding_error_output = true;
+          ctx->encoding_error_output = true;
           return false;
         }
     }
@@ -1159,7 +1164,7 @@ print_line_head (struct grep_ctx *ctx, char *beg, size_t len, char const *lim, c
     {
       if (lastnl < lim)
         {
-          nlscan (beg);
+          nlscan (ctx, beg);
           totalnl = add_count (totalnl, 1);
           lastnl = lim;
         }
@@ -1192,7 +1197,7 @@ print_line_middle (struct grep_ctx *ctx, char *beg, char *lim,
 
   for (cur = beg;
        (cur < lim
-        && ((match_offset = execute (ctx, compiled_pattern, beg, lim - beg,
+        && ((match_offset = ctx->execute (ctx, ctx->compiled_pattern, beg, lim - beg,
                                      &match_size, cur)) != (size_t) -1));
        cur = b + match_size)
     {
@@ -1237,7 +1242,7 @@ print_line_middle (struct grep_ctx *ctx, char *beg, char *lim,
           fwrite_errno (ctx, b, 1, match_size);
           pr_sgr_end_if (ctx, match_color);
           if (ctx->options[ONLY_MATCH])
-            putchar_errno (ctx, eolbyte);
+            putchar_errno (ctx, ctx->options[NULL_BOUND] ? '\0' : '\n');
         }
     }
 
@@ -1255,7 +1260,7 @@ print_line_tail (struct grep_ctx *ctx, char *beg, const char *lim, const char *l
   size_t eol_size;
   size_t tail_size;
 
-  eol_size   = (lim > beg && lim[-1] == eolbyte);
+  eol_size   = (lim > beg && lim[-1] == (ctx->options[NULL_BOUND] ? '\0' : '\n'));
   eol_size  += (lim - eol_size > beg && lim[-(1 + eol_size)] == '\r');
   tail_size  =  lim - eol_size - beg;
 
@@ -1333,6 +1338,7 @@ prpending (struct grep_ctx *ctx, char const *lim)
 {
   if (!lastout)
     lastout = bufbeg;
+  char eolbyte = ctx->options[NULL_BOUND] ? '\0' : '\n';
   for (; 0 < pending && lastout < lim; pending--)
     {
       char *nl = memchr (lastout, eolbyte, lim - lastout);
@@ -1345,7 +1351,7 @@ static void
 prtext (struct grep_ctx *ctx, char *beg, char *lim)
 {
   static bool used;	/* Avoid printing SEP_STR_GROUP before any output.  */
-  char eol = eolbyte;
+  char eol = ctx->options[NULL_BOUND] ? '\0' : '\n';
 
   if (!out_quiet && pending > 0)
     prpending (ctx, beg);
@@ -1444,7 +1450,7 @@ grepbuf (struct grep_ctx *ctx, char *beg, char const *lim)
   for (char *p = beg; p < lim; p = endp)
     {
       size_t match_size;
-      size_t match_offset = execute (ctx, compiled_pattern, p, lim - p,
+      size_t match_offset = ctx->execute (ctx, ctx->compiled_pattern, p, lim - p,
                                      &match_size, NULL);
       if (match_offset == (size_t) -1)
         {
@@ -1483,7 +1489,7 @@ grep (struct grep_ctx *ctx, int fd, struct stat const *st, bool *ineof)
   char oldc;
   char *beg;
   char *lim;
-  char eol = eolbyte;
+  char eol = ctx->options[NULL_BOUND] ? '\0' : '\n';
   char nul_zapper = '\0';
   bool done_on_match_0 = done_on_match;
   bool out_quiet_0 = out_quiet;
@@ -1503,7 +1509,7 @@ grep (struct grep_ctx *ctx, int fd, struct stat const *st, bool *ineof)
   after_last_match = 0;
   pending = 0;
   skip_nuls = skip_empty_lines && !eol;
-  encoding_error_output = false;
+  ctx->encoding_error_output = false;
 
   nlines = 0;
   residue = 0;
@@ -1605,7 +1611,7 @@ grep (struct grep_ctx *ctx, int fd, struct stat const *st, bool *ineof)
       if (out_byte)
         totalcc = add_count (totalcc, buflim - bufbeg - save);
       if (out_line)
-        nlscan (beg);
+        nlscan (ctx, beg);
       if (! fillbuf (ctx, save, st))
         {
           suppressible_error (ctx, EFAULT);
@@ -1624,10 +1630,10 @@ grep (struct grep_ctx *ctx, int fd, struct stat const *st, bool *ineof)
  finish_grep:
   done_on_match = done_on_match_0;
   out_quiet = out_quiet_0;
-  if (!out_quiet && (encoding_error_output
+  if (!out_quiet && (ctx->encoding_error_output
                      || (0 <= nlines_first_null && nlines_first_null < nlines)))
     {
-      printf_errno (ctx, _("Binary file %s matches\n"), input_filename ());
+      printf_errno (ctx, _("Binary file %s matches\n"), input_filename (ctx));
       if (line_buffered)
         fflush_errno ();
     }
@@ -1809,12 +1815,12 @@ finalize_input (struct grep_ctx *ctx, int fd, struct stat const *st, bool ineof)
   if (fd == STDIN_FILENO
       && (outleft
           ? (!ineof
-             && (seek_failed
+             && (ctx->seek_failed
                  || (kern_lseek (ctx->td, fd, 0, SEEK_END) < 0
                      /* Linux proc file system has EINVAL (Bug#25180).  */
                      && errno != EINVAL))
              && ! drain_input (ctx, fd, st))
-          : (bufoffset != after_last_match && !seek_failed
+          : (bufoffset != after_last_match && !ctx->seek_failed
              && kern_lseek (ctx->td, fd, after_last_match, SEEK_SET) < 0)))
     suppressible_error (ctx, EFAULT);
 }
@@ -1913,8 +1919,8 @@ grepdesc (struct grep_ctx *ctx, int desc, bool command_line)
     {
       if (! ctx->options[SUPPRESS_ERRORS])
         error (0, 0, _("input file %s is also the output"),
-               quote (input_filename ()));
-      errseen = true;
+               quote (input_filename (ctx)));
+      ctx->errseen = true;
       goto closeout;
     }
 
@@ -3021,7 +3027,7 @@ main (int argc, char **argv)
   while (*files != NULL);
 
   /* We register via atexit to test stdout.  */
-  return errseen ? EXIT_TROUBLE : status;
+  return ctx->errseen ? EXIT_TROUBLE : status;
 }
 
 #endif
@@ -3037,7 +3043,8 @@ void init_globals(struct grep_ctx *ctx) {
   memset(buffer, 0, bufalloc);
 
 
-  init_localeinfo (&localeinfo);
+  initialize_unibyte_mask (ctx);
+  init_localeinfo (&ctx->localeinfo);
 
   out_after = out_before = -1;
   max_count = INTMAX_MAX;
