@@ -92,18 +92,14 @@ Fcompile (struct grep_ctx *ctx, char *pattern, size_t size, reg_syntax_t ignored
             }
           len += 2;
         }
-#if !NO_LOCALE
       kwsincr (kwset, p, len);
-#endif
 
       p = sep;
     }
   while (p);
 
   free (buf);
-#if !NO_LOCALE
   ptrdiff_t words = kwswords (kwset);
-#endif
 
   if (ctx->options[CASE_INSENSITIVE])
     {
@@ -115,9 +111,7 @@ Fcompile (struct grep_ctx *ctx, char *pattern, size_t size, reg_syntax_t ignored
          the locale is en_US.utf8, append a pattern containing just
          the character U+0131 (LATIN SMALL LETTER DOTLESS I), so that
          Fexecute will use a DFA if the data contain U+0131.  */
-#if !NO_LOCALE
       mbstate_t mbs = { {} };
-#endif
       char checked[NCHAR] = {0,};
       for (p = pattern; p < pattern + size; p++)
         {
@@ -126,9 +120,6 @@ Fcompile (struct grep_ctx *ctx, char *pattern, size_t size, reg_syntax_t ignored
             continue;
           checked[c] = true;
 
-#if NO_LOCALE
-          NO_LOC_ERR;
-#else
           wint_t wc = ctx->localeinfo.sbctowc[c];
           wchar_t folded[CASE_FOLDED_BUFSIZE];
 
@@ -139,19 +130,14 @@ Fcompile (struct grep_ctx *ctx, char *pattern, size_t size, reg_syntax_t ignored
               if (1 < nbytes)
                 kwsincr (kwset, s, nbytes);
             }
-#endif
         }
     }
 
-#if !NO_LOCALE
   kwsprep (kwset);
-#endif
 
   struct kwsearch *kwsearch = xmalloc (sizeof *kwsearch);
-#if !NO_LOCALE
   kwsearch->kwset = kwset;
   kwsearch->words = words;
-#endif
   kwsearch->pattern = pattern;
   kwsearch->size = size;
   kwsearch->re = NULL;
