@@ -1053,14 +1053,14 @@ static bool out_invert;		/* Print nonmatching stuff. */
 static int out_file;		/* Print filenames. */
 static bool out_line;		/* Print line numbers. */
 static bool out_byte;		/* Print byte offsets. */
+#if 0
 static intmax_t out_before;	/* Lines of leading context. */
 static intmax_t out_after;	/* Lines of trailing context. */
 static bool count_matches;	/* Count matching lines.  */
-#if 0
 static bool no_filenames;	/* Suppress file names.  */
-#endif
 static intmax_t max_count;	/* Max number of selected
                                    lines from an input file.  */
+#endif
 static bool line_buffered;	/* Use line buffering.  */
 #if 0
 static char *label = NULL;      /* Fake filename for stdin */
@@ -1363,7 +1363,7 @@ prtext (struct grep_ctx *ctx, char *beg, char *lim)
       /* Deal with leading context.  */
       char const *bp = lastout ? lastout : bufbeg;
       intmax_t i;
-      for (i = 0; i < out_before; ++i)
+      for (i = 0; i < ctx->options[CONTEXT_BEFORE]; ++i)
         if (p > bp)
           do
             --p;
@@ -1371,7 +1371,7 @@ prtext (struct grep_ctx *ctx, char *beg, char *lim)
 
       /* Print the group separator unless the output is adjacent to
          the previous output in the file.  */
-      if ((0 <= out_before || 0 <= out_after) && used
+      if ((0 <= ctx->options[CONTEXT_BEFORE] || 0 <= ctx->options[CONTEXT_AFTER]) && used
           && p != lastout && ctx->group_separator)
         {
           pr_sgr_start_if (ctx, ctx->sep_color);
@@ -1412,7 +1412,7 @@ prtext (struct grep_ctx *ctx, char *beg, char *lim)
     }
 
   after_last_match = bufoffset - (buflim - p);
-  pending = out_quiet ? 0 : MAX (0, out_after);
+  pending = out_quiet ? 0 : MAX (0, ctx->options[CONTEXT_AFTER]);
   used = true;
   outleft -= n;
 }
@@ -1505,7 +1505,7 @@ grep (struct grep_ctx *ctx, int fd, struct stat const *st, bool *ineof)
   totalcc = 0;
   lastout = 0;
   totalnl = 0;
-  outleft = max_count;
+  outleft = ctx->options[MATCH_LIMIT];
   after_last_match = 0;
   pending = 0;
   skip_nuls = skip_empty_lines && !eol;
@@ -1541,7 +1541,7 @@ grep (struct grep_ctx *ctx, int fd, struct stat const *st, bool *ineof)
           if (binary_files == WITHOUT_MATCH_BINARY_FILES) {
             return 0;
           }
-          if (!count_matches)
+          if (!ctx->options[COUNT])
             done_on_match = out_quiet = true;
           nlines_first_null = nlines;
           nul_zapper = eol;
@@ -1594,7 +1594,7 @@ grep (struct grep_ctx *ctx, int fd, struct stat const *st, bool *ineof)
          next data. Make beg point to their begin.  */
       i = 0;
       beg = lim;
-      while (i < out_before && beg > bufbeg && beg != lastout)
+      while (i < ctx->options[CONTEXT_BEFORE] && beg > bufbeg && beg != lastout)
         {
           ++i;
           do
@@ -1914,7 +1914,7 @@ grepdesc (struct grep_ctx *ctx, int desc, bool command_line)
      so there is no risk of malfunction.  But even --max-count=2, with
      input==output, while there is no risk of infloop, there is a race
      condition that could result in "alternate" output.  */
-  if (!out_quiet && list_files == LISTFILES_NONE && 1 < max_count
+  if (!out_quiet && list_files == LISTFILES_NONE && 1 < ctx->options[MATCH_LIMIT]
       && S_ISREG (st.st_mode) && SAME_INODE (st, out_stat))
     {
       if (! ctx->options[SUPPRESS_ERRORS])
@@ -1925,7 +1925,7 @@ grepdesc (struct grep_ctx *ctx, int desc, bool command_line)
     }
 
   count = grep (ctx, desc, &st, &ineof);
-  if (count_matches)
+  if (ctx->options[COUNT])
     {
       if (out_file)
         {
@@ -2928,7 +2928,7 @@ main (int argc, char **argv)
 
   /* If it is easy to see that matching cannot succeed (e.g., 'grep -f
      /dev/null'), fail without reading the input.  */
-  if ((max_count == 0
+  if ((ctx->options[MATCH_LIMIT] == 0
        || (keycc == 0 && out_invert && !match_lines && !match_words))
       && list_files != LISTFILES_NONMATCHING)
     return EXIT_FAILURE;
@@ -3042,12 +3042,8 @@ void init_globals(struct grep_ctx *ctx) {
   buffer = xmalloc (bufalloc);
   memset(buffer, 0, bufalloc);
 
-
   initialize_unibyte_mask (ctx);
   init_localeinfo (&ctx->localeinfo);
-
-  out_after = out_before = -1;
-  max_count = INTMAX_MAX;
 }
 
 void clean_globals(struct grep_ctx *ctx) {
