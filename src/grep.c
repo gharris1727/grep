@@ -59,9 +59,6 @@
 
 enum { SEP_CHAR_SELECTED = ':' };
 enum { SEP_CHAR_REJECTED = '-' };
-#if 0
-static char const SEP_STR_GROUP[] = "--";
-#endif
 
 #define AUTHORS \
   proper_name ("Mike Haertel"), \
@@ -72,95 +69,6 @@ static char const SEP_STR_GROUP[] = "--";
    avoiding a potential (racy) infinite loop.  */
 static struct stat out_stat;
 
-#if 0
-/* if non-zero, display usage information and exit */
-static int show_help;
-
-/* Print the version on standard output and exit.  */
-static bool show_version;
-
-/* Suppress diagnostics for nonexistent or unreadable files.  */
-static bool suppress_errors;
-
-/* If nonzero, use color markers.  */
-static int color_option;
-
-/* Show only the part of a line matching the expression. */
-static bool only_matching;
-
-/* If nonzero, make sure first content char in a line is on a tab stop. */
-static bool align_tabs;
-
-/* Print width of line numbers and byte offsets.  Nonzero if ALIGN_TABS.  */
-static int offset_width;
-
-/* See below */
-struct FL_pair
-  {
-    char const *filename;
-    size_t lineno;
-  };
-
-/* A list of lineno,filename pairs corresponding to -f FILENAME
-   arguments. Since we store the concatenation of all patterns in
-   a single array, KEYS, be they from the command line via "-e PAT"
-   or read from one or more -f-specified FILENAMES.  Given this
-   invocation, grep -f <(seq 5) -f <(seq 2) -f <(seq 3) FILE, there
-   will be three entries in LF_PAIR: {1, x} {6, y} {8, z}, where
-   x, y and z are just place-holders for shell-generated names.  */
-static struct FL_pair *fl_pair;
-static size_t n_fl_pair_slots;
-/* Count not only -f-specified files, but also individual -e operands
-   and any command-line argument that serves as a regular expression.  */
-static size_t n_pattern_files;
-
-/* The number of patterns seen so far.
-   It is advanced by fl_add and, when needed, used in pattern_file_name
-   to derive a file-relative line number.  */
-static size_t n_patterns;
-/* Return the number of newline bytes in BUF with size SIZE.  */
-static size_t _GL_ATTRIBUTE_PURE
-count_nl_bytes (char const *buf, size_t size)
-{
-  char const *p = buf;
-  char const *end_p = buf + size;
-  size_t n = 0;
-  while ((p = memchr (p, '\n', end_p - p)))
-    p++, n++;
-  return n;
-}
-
-/* Append a FILENAME,line-number pair to FL_PAIR, and update
-   pattern-related counts from the contents of BUF with SIZE bytes.  */
-static void
-fl_add (struct grep_ctx *ctx, char const *buf, size_t size, char const *filename)
-{
-  if (ctx->n_fl_pair_slots <= ctx->n_pattern_files)
-    ctx->fl_pair = x2nrealloc (ctx->fl_pair, &ctx->n_fl_pair_slots, sizeof (struct FL_pair));
-
-  ctx->fl_pair[ctx->n_pattern_files].lineno = ctx->n_patterns + 1;
-  ctx->fl_pair[ctx->n_pattern_files].filename = filename;
-  ctx->n_pattern_files++;
-  ctx->n_patterns += count_nl_bytes (buf, size);
-}
-
-/* Map the line number, LINENO, of one of the input patterns to the
-   name of the file from which it came.  If it was read from stdin
-   or if it was specified on the command line, return "-".  */
-char const * _GL_ATTRIBUTE_PURE
-pattern_file_name (struct grep_ctx *ctx, size_t lineno, size_t *new_lineno)
-{
-  size_t i;
-  for (i = 1; i < ctx->n_pattern_files; i++)
-    {
-      if (lineno < ctx->fl_pair[i].lineno)
-        break;
-    }
-
-  *new_lineno = lineno - ctx->fl_pair[i - 1].lineno + 1;
-  return ctx->fl_pair[i - 1].filename;
-}
-#endif
 
 #if HAVE_ASAN
 /* Record the starting address and length of the sole poisoned region,
@@ -186,11 +94,6 @@ asan_poison (void const *addr, size_t size)
 #else
 static void clear_asan_poison (void) { }
 static void asan_poison (void const volatile *addr, size_t size) { }
-#endif
-
-#if 0
-/* The group separator used when context is requested. */
-static const char *group_separator = SEP_STR_GROUP;
 #endif
 
 /* The context and logic for choosing default --color screen attributes
@@ -238,18 +141,6 @@ static const char *group_separator = SEP_STR_GROUP;
 /* The color strings used for matched text.
    The user can overwrite them using the deprecated
    environment variable GREP_COLOR or the new GREP_COLORS.  */
-#if 0
-static const char *selected_match_color = "01;31";	/* bold red */
-static const char *context_match_color  = "01;31";	/* bold red */
-
-/* Other colors.  Defaults look damn good.  */
-static const char *filename_color = "35";	/* magenta */
-static const char *line_num_color = "32";	/* green */
-static const char *byte_num_color = "32";	/* green */
-static const char *sep_color      = "36";	/* cyan */
-static const char *selected_line_color = "";	/* default color pair */
-static const char *context_line_color  = "";	/* default color pair */
-#endif
 
 /* Select Graphic Rendition (SGR, "\33[...m") strings.  */
 /* Also Erase in Line (EL) to Right ("\33[K") by default.  */
@@ -308,6 +199,7 @@ static const char *context_line_color  = "";	/* default color pair */
       It would be impractical for GNU grep to become a full-fledged
       terminal program linked against ncurses or the like, so it will
       not detect terminfo(5) capabilities.  */
+
 #define PRINTF_BUF_SZ 1024
 static char printf_buf[PRINTF_BUF_SZ];
 
@@ -361,15 +253,6 @@ pr_sgr_end_if (struct grep_ctx *ctx, char const *s)
     pr_sgr_end (ctx, s);
 }
 
-#if 0
-struct color_cap
-  {
-    const char *name;
-    const char **var;
-    void (*fct) (struct grep_ctx *);
-  };
-#endif
-
 void
 color_cap_mt_fct (struct grep_ctx *ctx)
 {
@@ -389,30 +272,6 @@ color_cap_ne_fct (struct grep_ctx *ctx)
 {
     ctx->options[SGR_ALT] = true;
 }
-
-#if 0
-/* For GREP_COLORS.  */
-static const struct color_cap color_dict[] =
-  {
-    { "mt", &ctx->selected_match_color, color_cap_mt_fct }, /* both ms/mc */
-    { "ms", &ctx->selected_match_color, NULL }, /* selected matched text */
-    { "mc", &ctx->context_match_color,  NULL }, /* context matched text */
-    { "fn", &ctx->filename_color,       NULL }, /* filename */
-    { "ln", &ctx->line_num_color,       NULL }, /* line number */
-    { "bn", &ctx->byte_num_color,       NULL }, /* byte (sic) offset */
-    { "se", &ctx->sep_color,            NULL }, /* separator */
-    { "sl", &ctx->selected_line_color,  NULL }, /* selected lines */
-    { "cx", &ctx->context_line_color,   NULL }, /* context lines */
-    { "rv", NULL,                  color_cap_rv_fct }, /* -v reverses sl/cx */
-    { "ne", NULL,                  color_cap_ne_fct }, /* no EL on SGR_* */
-    { NULL, NULL,                  NULL }
-  };
-#endif
-
-#if 0
-/* Saved errno value from failed output functions on stdout.  */
-static int stdout_errno;
-#endif
 
 static void
 putchar_errno (struct grep_ctx *ctx, int c)
@@ -438,14 +297,6 @@ fflush_errno (void)
 {
 }
 
-#if 0
-static struct exclude *excluded_patterns[2];
-static struct exclude *excluded_directory_patterns[2];
-/* Short options.  */
-static char const short_options[] =
-"0123456789A:B:C:D:EFGHIPTUVX:abcd:e:f:hiLlm:noqRrsuvwxyZz";
-#endif
-
 /* Non-boolean long options that have no corresponding short equivalents.  */
 enum
 {
@@ -460,87 +311,6 @@ enum
   LABEL_OPTION
 };
 
-#if 0
-/* Long options equivalences. */
-static struct option const long_options[] =
-{
-  {"basic-regexp",    no_argument, NULL, 'G'},
-  {"extended-regexp", no_argument, NULL, 'E'},
-  {"fixed-regexp",    no_argument, NULL, 'F'},
-  {"fixed-strings",   no_argument, NULL, 'F'},
-  {"perl-regexp",     no_argument, NULL, 'P'},
-  {"after-context", required_argument, NULL, 'A'},
-  {"before-context", required_argument, NULL, 'B'},
-  {"binary-files", required_argument, NULL, BINARY_FILES_OPTION},
-  {"byte-offset", no_argument, NULL, 'b'},
-  {"context", required_argument, NULL, 'C'},
-  {"color", optional_argument, NULL, COLOR_OPTION},
-  {"colour", optional_argument, NULL, COLOR_OPTION},
-  {"count", no_argument, NULL, 'c'},
-  {"devices", required_argument, NULL, 'D'},
-  {"directories", required_argument, NULL, 'd'},
-  {"exclude", required_argument, NULL, EXCLUDE_OPTION},
-  {"exclude-from", required_argument, NULL, EXCLUDE_FROM_OPTION},
-  {"exclude-dir", required_argument, NULL, EXCLUDE_DIRECTORY_OPTION},
-  {"file", required_argument, NULL, 'f'},
-  {"files-with-matches", no_argument, NULL, 'l'},
-  {"files-without-match", no_argument, NULL, 'L'},
-  {"group-separator", required_argument, NULL, GROUP_SEPARATOR_OPTION},
-  {"help", no_argument, &show_help, 1},
-  {"include", required_argument, NULL, INCLUDE_OPTION},
-  {"ignore-case", no_argument, NULL, 'i'},
-  {"initial-tab", no_argument, NULL, 'T'},
-  {"label", required_argument, NULL, LABEL_OPTION},
-  {"line-buffered", no_argument, NULL, LINE_BUFFERED_OPTION},
-  {"line-number", no_argument, NULL, 'n'},
-  {"line-regexp", no_argument, NULL, 'x'},
-  {"max-count", required_argument, NULL, 'm'},
-
-  {"no-filename", no_argument, NULL, 'h'},
-  {"no-group-separator", no_argument, NULL, GROUP_SEPARATOR_OPTION},
-  {"no-messages", no_argument, NULL, 's'},
-  {"null", no_argument, NULL, 'Z'},
-  {"null-data", no_argument, NULL, 'z'},
-  {"only-matching", no_argument, NULL, 'o'},
-  {"quiet", no_argument, NULL, 'q'},
-  {"recursive", no_argument, NULL, 'r'},
-  {"dereference-recursive", no_argument, NULL, 'R'},
-  {"regexp", required_argument, NULL, 'e'},
-  {"invert-match", no_argument, NULL, 'v'},
-  {"silent", no_argument, NULL, 'q'},
-  {"text", no_argument, NULL, 'a'},
-  {"binary", no_argument, NULL, 'U'},
-  {"unix-byte-offsets", no_argument, NULL, 'u'},
-  {"version", no_argument, NULL, 'V'},
-  {"with-filename", no_argument, NULL, 'H'},
-  {"word-regexp", no_argument, NULL, 'w'},
-  {0, 0, 0, 0}
-};
-
-#endif
-
-
-#if 0
-/* Define flags declared in grep.h. */
-bool match_icase;
-bool match_words;
-bool match_lines;
-char eolbyte;
-#endif
-
-#if 0
-/* For error messages. */
-/* The input file name, or (if standard input) null or a --label argument.  */
-static char const *filename;
-/* Omit leading "./" from file names in diagnostics.  */
-static bool omit_dot_slash;
-static bool errseen;
-
-/* True if output from the current input file has been suppressed
-   because an output line had an encoding error.  */
-static bool encoding_error_output;
-#endif
-
 enum directories_type
   {
     READ_DIRECTORIES = 2,
@@ -548,19 +318,6 @@ enum directories_type
     SKIP_DIRECTORIES
   };
 
-#if 0
-/* How to handle directories.  */
-static char const *const directories_args[] =
-{
-  "read", "recurse", "skip", NULL
-};
-static enum directories_type const directories_types[] =
-{
-  READ_DIRECTORIES, RECURSE_DIRECTORIES, SKIP_DIRECTORIES
-};
-ARGMATCH_VERIFY (directories_args, directories_types);
-
-#endif
 static enum directories_type directories = READ_DIRECTORIES;
 
 /* How to handle devices. */
@@ -601,15 +358,6 @@ enum { SEEK_DATA = SEEK_SET };
 enum { SEEK_HOLE = SEEK_SET };
 #endif
 
-#if 0
-/* True if lseek with SEEK_CUR or SEEK_DATA failed on the current input.  */
-static bool seek_failed;
-static bool seek_data_failed;
-
-execute_fp_t execute;
-void *compiled_pattern;
-#endif
-
 static char const *
 input_filename (struct grep_ctx *ctx)
 {
@@ -626,17 +374,6 @@ suppressible_error (struct grep_ctx *ctx, int errnum)
     error (0, errnum, "%s", input_filename (ctx));
   ctx->errseen = true;
 }
-
-#if 0
-/* If there has already been a write error, don't bother closing
-   standard output, as that might elicit a duplicate diagnostic.  */
-static void
-clean_up_stdout (void)
-{
-  if (! stdout_errno)
-    close_stdout ();
-}
-#endif
 
 /* A cast to TYPE of VAL.  Use this when TYPE is a pointer type, VAL
    is properly aligned for TYPE, and 'gcc -Wcast-align' cannot infer
@@ -656,10 +393,6 @@ clean_up_stdout (void)
 /* An unsigned type suitable for fast matching.  */
 typedef uintmax_t uword;
 
-#if 0
-struct localeinfo localeinfo;
-#endif
-
 /* A mask to test for unibyte characters, with the pattern repeated to
    fill a uword.  For a multibyte character encoding where
    all bytes are unibyte characters, this is 0.  For UTF-8, this is
@@ -668,9 +401,6 @@ struct localeinfo localeinfo;
    character if C & UNIBYTE_MASK is zero.  If the uword W is the
    concatenation of bytes, the bytes are all unibyte characters
    if W & UNIBYTE_MASK is zero.  */
-#if 0
-static uword unibyte_mask;
-#endif
 
 static void
 initialize_unibyte_mask (struct grep_ctx *ctx)
@@ -784,44 +514,6 @@ file_must_have_nulls (struct grep_ctx *ctx, size_t size, int fd, struct stat con
   return false;
 }
 
-#if 0
-/* Convert STR to a nonnegative integer, storing the result in *OUT.
-   STR must be a valid context length argument; report an error if it
-   isn't.  Silently ceiling *OUT at the maximum value, as that is
-   practically equivalent to infinity for grep's purposes.  */
-static void
-context_length_arg (char const *str, intmax_t *out)
-{
-  *out = strtol (str, NULL, 10);
-}
-
-/* Return the add_exclude options suitable for excluding a file name.
-   If COMMAND_LINE, it is a command-line file name.  */
-static int
-exclude_options (bool command_line)
-{
-  return EXCLUDE_WILDCARDS | (command_line ? 0 : EXCLUDE_ANCHORED);
-}
-
-/* Return true if the file with NAME should be skipped.
-   If COMMAND_LINE, it is a command-line argument.
-   If IS_DIR, it is a directory.  */
-static bool
-skipped_file (char const *name, bool command_line, bool is_dir)
-{
-  struct exclude **pats;
-  if (! is_dir)
-    pats = excluded_patterns;
-  else if (directories == SKIP_DIRECTORIES)
-    return true;
-  else if (command_line && omit_dot_slash)
-    return false;
-  else
-    pats = excluded_directory_patterns;
-  return pats[command_line] && excluded_file_name (pats[command_line], name);
-}
-#endif
-
 /* Hairy buffering mechanism for grep.  The intent is to keep
    all reads aligned on a page boundary and multiples of the
    page size, unless a read yields a partial page.  */
@@ -885,16 +577,8 @@ reset (struct grep_ctx *ctx, int fd, struct stat const *st)
 
   if (ctx->seek_failed)
     {
-#if 0
-      if (errno != ESPIPE)
-        {
-#endif
           suppressible_error (ctx, EFAULT);
           return false;
-#if 0
-        }
-      bufoffset = 0;
-#endif
     }
   return true;
 }
@@ -1053,19 +737,7 @@ static bool out_invert;		/* Print nonmatching stuff. */
 static int out_file;		/* Print filenames. */
 static bool out_line;		/* Print line numbers. */
 static bool out_byte;		/* Print byte offsets. */
-#if 0
-static intmax_t out_before;	/* Lines of leading context. */
-static intmax_t out_after;	/* Lines of trailing context. */
-static bool count_matches;	/* Count matching lines.  */
-static bool no_filenames;	/* Suppress file names.  */
-static intmax_t max_count;	/* Max number of selected
-                                   lines from an input file.  */
-#endif
 static bool line_buffered;	/* Use line buffering.  */
-#if 0
-static char *label = NULL;      /* Fake filename for stdin */
-#endif
-
 
 /* Internal variables to keep track of byte count, context, etc. */
 static uintmax_t totalcc;	/* Total character count before bufbeg. */
@@ -1077,9 +749,6 @@ static intmax_t outleft;	/* Maximum number of selected lines.  */
 static intmax_t pending;	/* Pending lines of output.
                                    Always kept 0 if out_quiet is true.  */
 static bool done_on_match;	/* Stop scanning file on first match.  */
-#if 0
-static bool exit_on_match;	/* Exit on first match.  */
-#endif
 static bool dev_null_output;	/* Stdout is known to be /dev/null.  */
 static bool binary;		/* Use binary rather than text I/O.  */
 
@@ -1323,11 +992,6 @@ prline (struct grep_ctx *ctx, char *beg, char *lim, char sep)
 
   if (line_buffered)
     fflush_errno ();
-
-#if 0
-  if (stdout_errno)
-    die (EXIT_TROUBLE, stdout_errno, _("write error"));
-#endif
 
   lastout = lim;
 }
@@ -1640,98 +1304,6 @@ grep (struct grep_ctx *ctx, int fd, struct stat const *st, bool *ineof)
   return nlines;
 }
 
-#if 0
-static bool
-grepdirent (FTS *fts, FTSENT *ent, bool command_line)
-{
-  bool follow;
-  command_line &= ent->fts_level == FTS_ROOTLEVEL;
-
-  if (ent->fts_info == FTS_DP)
-    {
-      if (directories == RECURSE_DIRECTORIES && command_line)
-        out_file &= ~ (2 * !no_filenames);
-      return true;
-    }
-
-  if (!command_line
-      && skipped_file (ent->fts_name, false,
-                       (ent->fts_info == FTS_D || ent->fts_info == FTS_DC
-                        || ent->fts_info == FTS_DNR)))
-    {
-      fts_set (fts, ent, FTS_SKIP);
-      return true;
-    }
-
-  filename = ent->fts_path;
-  if (omit_dot_slash && filename[1])
-    filename += 2;
-  follow = (fts->fts_options & FTS_LOGICAL
-            || (fts->fts_options & FTS_COMFOLLOW && command_line));
-
-  switch (ent->fts_info)
-    {
-    case FTS_D:
-      if (directories == RECURSE_DIRECTORIES)
-        {
-          out_file |= 2 * !no_filenames;
-          return true;
-        }
-      fts_set (fts, ent, FTS_SKIP);
-      break;
-
-    case FTS_DC:
-      if (!ctx->suppress_errors)
-        error (0, 0, _("warning: %s: %s"), filename,
-               _("recursive directory loop"));
-      return true;
-
-    case FTS_DNR:
-    case FTS_ERR:
-    case FTS_NS:
-      suppressible_error (ent->fts_errno);
-      return true;
-
-    case FTS_DEFAULT:
-    case FTS_NSOK:
-      if (skip_devices (command_line))
-        {
-          struct stat *st = ent->fts_statp;
-          struct stat st1;
-          if (! st->st_mode)
-            {
-              /* The file type is not already known.  Get the file status
-                 before opening, since opening might have side effects
-                 on a device.  */
-              int flag = follow ? 0 : AT_SYMLINK_NOFOLLOW;
-              if (fstatat (fts->fts_cwd_fd, ent->fts_accpath, &st1, flag) != 0)
-                {
-                  suppressible_error (errno);
-                  return true;
-                }
-              st = &st1;
-            }
-          if (is_device_mode (st->st_mode))
-            return true;
-        }
-      break;
-
-    case FTS_F:
-    case FTS_SLNONE:
-      break;
-
-    case FTS_SL:
-    case FTS_W:
-      return true;
-
-    default:
-      abort ();
-    }
-
-  return grepfile (fts->fts_cwd_fd, ent->fts_accpath, follow, command_line);
-}
-#endif
-
 /* True if errno is ERR after 'open ("symlink", ... O_NOFOLLOW ...)'.
    POSIX specifies ELOOP, but it's EMLINK on FreeBSD and EFTYPE on NetBSD.  */
 static bool
@@ -1862,31 +1434,6 @@ grepdesc (struct grep_ctx *ctx, int desc, bool command_line)
          unfortunately fts provides no way to traverse the directory
          starting from its file descriptor.  */
 
-#if 0
-      FTS *fts;
-      FTSENT *ent;
-      int opts = fts_options & ~(command_line ? 0 : FTS_COMFOLLOW);
-      char *fts_arg[2];
-
-      /* Close DESC now, to conserve file descriptors if the race
-         condition occurs many times in a deep recursion.  */
-      if (close (desc) != 0)
-        suppressible_error (errno);
-
-      fts_arg[0] = (char *) filename;
-      fts_arg[1] = NULL;
-      fts = fts_open (fts_arg, opts, NULL);
-
-      if (!fts)
-        xalloc_die ();
-      while ((ent = fts_read (fts)))
-        status &= grepdirent (fts, ent, command_line);
-      if (errno)
-        suppressible_error (errno);
-      if (fts_close (fts) != 0)
-        suppressible_error (errno);
-      return status;
-#endif
       uprintf("Trying to recurse into subdirectories!\n");
     }
   if (desc != STDIN_FILENO
@@ -1958,130 +1505,6 @@ grepdesc (struct grep_ctx *ctx, int desc, bool command_line)
   return status;
 }
 
-#if 0
-static bool
-grep_command_line_arg (char const *arg)
-{
-  if (STREQ (arg, "-"))
-    {
-      filename = label;
-      if (binary)
-        xset_binary_mode (STDIN_FILENO, O_BINARY);
-      return grepdesc (td, slbuf, STDIN_FILENO, true);
-    }
-  else
-    {
-      filename = arg;
-      return grepfile (td, slbuf, AT_FDCWD, arg, true, true);
-    }
-}
-#endif
-
-#if 0
-_Noreturn void usage (int);
-void
-usage (int status)
-{
-  if (status != 0)
-    {
-      fprintf (stderr, _("Usage: %s [OPTION]... PATTERN [FILE]...\n"),
-               getprogname ());
-      fprintf (stderr, _("Try '%s --help' for more information.\n"),
-               getprogname ());
-    }
-  else
-    {
-      printf (_("Usage: %s [OPTION]... PATTERN [FILE]...\n"), getprogname ());
-      printf (_("Search for PATTERN in each FILE.\n"));
-      printf (_("\
-Example: %s -i 'hello world' menu.h main.c\n\
-\n\
-Pattern selection and interpretation:\n"), getprogname ());
-      printf (_("\
-  -E, --extended-regexp     PATTERN is an extended regular expression\n\
-  -F, --fixed-strings       PATTERN is a set of newline-separated strings\n\
-  -G, --basic-regexp        PATTERN is a basic regular expression (default)\n\
-  -P, --perl-regexp         PATTERN is a Perl regular expression\n"));
-  /* -X is deliberately undocumented.  */
-      printf (_("\
-  -e, --regexp=PATTERN      use PATTERN for matching\n\
-  -f, --file=FILE           obtain PATTERN from FILE\n\
-  -i, --ignore-case         ignore case distinctions\n\
-  -w, --word-regexp         force PATTERN to match only whole words\n\
-  -x, --line-regexp         force PATTERN to match only whole lines\n\
-  -z, --null-data           a data line ends in 0 byte, not newline\n"));
-      printf (_("\
-\n\
-Miscellaneous:\n\
-  -s, --no-messages         suppress error messages\n\
-  -v, --invert-match        select non-matching lines\n\
-  -V, --version             display version information and exit\n\
-      --help                display this help text and exit\n"));
-      printf (_("\
-\n\
-Output control:\n\
-  -m, --max-count=NUM       stop after NUM selected lines\n\
-  -b, --byte-offset         print the byte offset with output lines\n\
-  -n, --line-number         print line number with output lines\n\
-      --line-buffered       flush output on every line\n\
-  -H, --with-filename       print file name with output lines\n\
-  -h, --no-filename         suppress the file name prefix on output\n\
-      --label=LABEL         use LABEL as the standard input file name prefix\n\
-"));
-      printf (_("\
-  -o, --only-matching      show only nonempty parts of lines matching PATTERN\n\
-  -q, --quiet, --silent     suppress all normal output\n\
-      --binary-files=TYPE   assume that binary files are TYPE;\n\
-                            TYPE is 'binary', 'text', or 'without-match'\n\
-  -a, --text                equivalent to --binary-files=text\n\
-"));
-      printf (_("\
-  -I                        equivalent to --binary-files=without-match\n\
-  -d, --directories=ACTION  how to handle directories;\n\
-                            ACTION is 'read', 'recurse', or 'skip'\n\
-  -D, --devices=ACTION      how to handle devices, FIFOs and sockets;\n\
-                            ACTION is 'read' or 'skip'\n\
-  -r, --recursive           like --directories=recurse\n\
-  -R, --dereference-recursive  likewise, but follow all symlinks\n\
-"));
-      printf (_("\
-      --include=FILE_PATTERN  search only files that match FILE_PATTERN\n\
-      --exclude=FILE_PATTERN  skip files and directories matching\
- FILE_PATTERN\n\
-      --exclude-from=FILE   skip files matching any file pattern from FILE\n\
-      --exclude-dir=PATTERN  directories that match PATTERN will be skipped.\n\
-"));
-      printf (_("\
-  -L, --files-without-match  print only names of FILEs with no selected lines\n\
-  -l, --files-with-matches  print only names of FILEs with selected lines\n\
-  -c, --count               print only a count of selected lines per FILE\n\
-  -T, --initial-tab         make tabs line up (if needed)\n\
-  -Z, --null                print 0 byte after FILE name\n"));
-      printf (_("\
-\n\
-Context control:\n\
-  -B, --before-context=NUM  print NUM lines of leading context\n\
-  -A, --after-context=NUM   print NUM lines of trailing context\n\
-  -C, --context=NUM         print NUM lines of output context\n\
-"));
-      printf (_("\
-  -NUM                      same as --context=NUM\n\
-      --color[=WHEN],\n\
-      --colour[=WHEN]       use markers to highlight the matching strings;\n\
-                            WHEN is 'always', 'never', or 'auto'\n\
-  -U, --binary              do not strip CR characters at EOL (MSDOS/Windows)\n\
-\n"));
-      printf (_("\
-When FILE is '-', read standard input.  With no FILE, read '.' if\n\
-recursive, '-' otherwise.  With fewer than two FILEs, assume -h.\n\
-Exit status is 0 if any line (or file if -L) is selected, 1 otherwise;\n\
-if any error occurs and -q is not given, the exit status is 2.\n"));
-      emit_bug_reporting_address ();
-    }
-  exit (status);
-}
-#endif
-
 /* Pattern compilers and matchers.  */
 
 const matcher_t matchers[7] = {
@@ -2095,150 +1518,6 @@ const matcher_t matchers[7] = {
 };
 /* Keep these in sync with the 'matchers' table.  */
 enum { E_MATCHER_INDEX = 1, F_MATCHER_INDEX = 2, G_MATCHER_INDEX = 0 };
-
-#if 0
-/* Return the index of the matcher corresponding to M if available.
-   MATCHER is the index of the previous matcher, or -1 if none.
-   Exit in case of conflicts or if M is not available.  */
-static int
-setmatcher (char const *m, int matcher)
-{
-  for (int i = 0; i < sizeof matchers / sizeof *matchers; i++)
-    if (STREQ (m, matchers[i].name))
-      {
-        if (0 <= matcher && matcher != i)
-          die (EXIT_TROUBLE, 0, _("conflicting matchers specified"));
-        return i;
-      }
-
-  die (EXIT_TROUBLE, 0, _("invalid matcher %s"), m);
-}
-#endif
-
-#if 0
-/* Find the white-space-separated options specified by OPTIONS, and
-   using BUF to store copies of these options, set ARGV[0], ARGV[1],
-   etc. to the option copies.  Return the number N of options found.
-   Do not set ARGV[N] to NULL.  If ARGV is NULL, do not store ARGV[0]
-   etc.  Backslash can be used to escape whitespace (and backslashes).  */
-static size_t
-prepend_args (char const *options, char *buf, char **argv)
-{
-  char const *o = options;
-  char *b = buf;
-  size_t n = 0;
-
-  for (;;)
-    {
-      while (c_isspace (to_uchar (*o)))
-        o++;
-      if (!*o)
-        return n;
-      if (argv)
-        argv[n] = b;
-      n++;
-
-      do
-        if ((*b++ = *o++) == '\\' && *o)
-          b[-1] = *o++;
-      while (*o && ! c_isspace (to_uchar (*o)));
-
-      *b++ = '\0';
-    }
-}
-#endif
-
-#if 0
-/* Prepend the whitespace-separated options in OPTIONS to the argument
-   vector of a main program with argument count *PARGC and argument
-   vector *PARGV.  Return the number of options prepended.  */
-static int
-prepend_default_options (char const *options, int *pargc, char ***pargv)
-{
-  if (options && *options)
-    {
-      char *buf = xmalloc (strlen (options) + 1);
-      size_t prepended = prepend_args (options, buf, NULL);
-      int argc = *pargc;
-      char *const *argv = *pargv;
-      char **pp;
-      enum { MAX_ARGS = MIN (INT_MAX, SIZE_MAX / sizeof *pp - 1) };
-      if (MAX_ARGS - argc < prepended)
-        xalloc_die ();
-      pp = xmalloc ((prepended + argc + 1) * sizeof *pp);
-      *pargc = prepended + argc;
-      *pargv = pp;
-      *pp++ = *argv++;
-      pp += prepend_args (options, buf, pp);
-      while ((*pp++ = *argv++))
-        continue;
-      return prepended;
-    }
-
-  return 0;
-}
-#endif
-
-#if 0
-/* Get the next non-digit option from ARGC and ARGV.
-   Return -1 if there are no more options.
-   Process any digit options that were encountered on the way,
-   and store the resulting integer into *DEFAULT_CONTEXT.  */
-static int
-get_nondigit_option (int argc, char *const *argv, intmax_t *default_context)
-{
-  static int prev_digit_optind = -1;
-  int this_digit_optind;
-  bool was_digit;
-  char buf[INT_BUFSIZE_BOUND (intmax_t) + 4];
-  char *p = buf;
-  int opt;
-
-  was_digit = false;
-  this_digit_optind = optind;
-  while (true)
-    {
-      opt = getopt_long (argc, (char **) argv, short_options,
-                         long_options, NULL);
-      if (! c_isdigit (opt))
-        break;
-
-      if (prev_digit_optind != this_digit_optind || !was_digit)
-        {
-          /* Reset to start another context length argument.  */
-          p = buf;
-        }
-      else
-        {
-          /* Suppress trivial leading zeros, to avoid incorrect
-             diagnostic on strings like 00000000000.  */
-          p -= buf[0] == '0';
-        }
-
-      if (p == buf + sizeof buf - 4)
-        {
-          /* Too many digits.  Append "..." to make context_length_arg
-             complain about "X...", where X contains the digits seen
-             so far.  */
-          strcpy (p, "...");
-          p += 3;
-          break;
-        }
-      *p++ = opt;
-
-      was_digit = true;
-      prev_digit_optind = this_digit_optind;
-      this_digit_optind = optind;
-    }
-  if (p != buf)
-    {
-      *p = '\0';
-      context_length_arg (buf, default_context);
-    }
-
-  return opt;
-}
-#endif
 
 /* Parse GREP_COLORS.  The default would look like:
      GREP_COLORS='ms=01;31:mc=01;31:sl=:cx=:fn=35:ln=32:bn=32:se=36'
@@ -2297,77 +1576,6 @@ parse_grep_colors (struct grep_ctx *ctx, const char *p)
       return;
 }
 
-#if 0
-/* Return true if PAT (of length PATLEN) contains an encoding error.  */
-static bool
-contains_encoding_error (char const *pat, size_t patlen)
-{
-  mbstate_t mbs = { {0} };
-  size_t i, charlen;
-
-  for (i = 0; i < patlen; i += charlen)
-    {
-      charlen = mb_clen (pat + i, patlen - i, &mbs);
-      if ((size_t) -2 <= charlen)
-        return true;
-    }
-  return false;
-}
-#endif
-
-#if 0
-/* Return the number of bytes in the initial character of PAT, of size
-   PATLEN, if Fcompile can handle that character.  Return -1 if
-   Fcompile cannot handle it.  MBS is the multibyte conversion state.
-
-   Fcompile can handle a character C if C is single-byte, or if C has no
-   case folded counterparts and toupper translates none of its bytes.  */
-
-static int
-fgrep_icase_charlen (char const *pat, size_t patlen, mbstate_t *mbs)
-{
-  int n = localeinfo.sbclen[to_uchar (*pat)];
-  if (n < 0)
-    {
-      wchar_t wc;
-      wchar_t folded[CASE_FOLDED_BUFSIZE];
-      size_t wn = mbrtowc (&wc, pat, patlen, mbs);
-      if (MB_LEN_MAX < wn || case_folded_counterparts (wc, folded))
-        return -1;
-      for (int i = wn; 0 < --i; )
-        {
-          unsigned char c = pat[i];
-          if (toupper (c) != c)
-            return -1;
-        }
-      n = wn;
-    }
-  return n;
-}
-#endif
-
-#if 0
-/* Return true if the -F patterns PAT, of size PATLEN, contain only
-   single-byte characters or characters not subject to case folding,
-   and so can be processed by Fcompile.  */
-
-static bool
-fgrep_icase_available (char const *pat, size_t patlen)
-{
-  mbstate_t mbs = {{0}};
-
-  for (size_t i = 0; i < patlen; )
-    {
-      int n = fgrep_icase_charlen (pat + i, patlen - i, &mbs);
-      if (n < 0)
-        return false;
-      i += n;
-    }
-
-  return true;
-}
-#endif
-
 /* Change the pattern *KEYS_P, of size *LEN_P, from fgrep to grep style.  */
 
 void
@@ -2413,625 +1621,6 @@ fgrep_to_grep_pattern (struct grep_ctx *ctx, char **keys_p, size_t *len_p)
   *len_p = p - new_keys;
 }
 
-#if 0
-/* If it is easy, convert the MATCHER-style patterns KEYS (of size
-   *LEN_P) to -F style, update *LEN_P to a possibly-smaller value, and
-   return F_MATCHER_INDEX.  If not, leave KEYS and *LEN_P alone and
-   return MATCHER.  This function is conservative and sometimes misses
-   conversions, e.g., it does not convert the -E pattern "(a|a|[aa])"
-   to the -F pattern "a".  */
-
-static int
-try_fgrep_pattern (int matcher, char *keys, size_t *len_p)
-{
-  int result = matcher;
-  size_t len = *len_p;
-  char *new_keys = xmalloc (len + 1);
-  char *p = new_keys;
-  char const *q = keys;
-#if !NO_LOCALE
-  mbstate_t mb_state = { {0} };
-#endif
-
-  while (len != 0)
-    {
-      switch (*q)
-        {
-        case '$': case '*': case '.': case '[': case '^':
-          goto fail;
-
-        case '(': case '+': case '?': case '{': case '|':
-          if (matcher != G_MATCHER_INDEX)
-            goto fail;
-          break;
-
-        case '\\':
-          if (1 < len)
-            switch (q[1])
-              {
-              case '\n':
-              case 'B': case 'S': case 'W': case'\'': case '<':
-              case 'b': case 's': case 'w': case '`': case '>':
-              case '1': case '2': case '3': case '4':
-              case '5': case '6': case '7': case '8': case '9':
-                goto fail;
-
-              case '(': case '+': case '?': case '{': case '|':
-                if (matcher == G_MATCHER_INDEX)
-                  goto fail;
-                FALLTHROUGH;
-              default:
-                q++, len--;
-                break;
-              }
-          break;
-        }
-
-      {
-        size_t n;
-#if NO_LOCALE
-        NO_LOC_ERR;
-        n = 1;
-#else
-        if (match_icase)
-          {
-            int ni = fgrep_icase_charlen (q, len, &mb_state);
-            if (ni < 0)
-              goto fail;
-            n = ni;
-          }
-        else
-          {
-            n = mb_clen (q, len, &mb_state);
-            if (MB_LEN_MAX < n)
-              goto fail;
-          }
-#endif
-        memcpy (p, q, n);
-        p += n;
-        q += n;
-        len -= n;
-      }
-    }
-
-  if (*len_p != p - new_keys)
-    {
-      *len_p = p - new_keys;
-      memcpy (keys, new_keys, p - new_keys);
-    }
-  result = F_MATCHER_INDEX;
-
- fail:
-  free (new_keys);
-  return result;
-}
-#endif 
-
-#if 0
-int
-main (int argc, char **argv)
-{
-  char *keys = NULL;
-  size_t keycc = 0, oldcc, keyalloc = 0;
-  int matcher = -1;
-  bool with_filenames = false;
-  size_t cc;
-  int opt, prepended;
-  int prev_optind, last_recursive;
-  int fread_errno;
-  intmax_t default_context;
-  FILE *fp;
-  exit_failure = EXIT_TROUBLE;
-  initialize_main (&argc, &argv);
-
-  eolbyte = '\n';
-  filename_mask = ~0;
-
-  max_count = INTMAX_MAX;
-
-  /* The value -1 means to use DEFAULT_CONTEXT. */
-  out_after = out_before = -1;
-  /* Default before/after context: changed by -C/-NUM options */
-  default_context = -1;
-  /* Changed by -o option */
-  only_matching = false;
-
-  /* Internationalization. */
-#if defined HAVE_SETLOCALE
-  setlocale (LC_ALL, "");
-#endif
-#if defined ENABLE_NLS
-  bindtextdomain (PACKAGE, LOCALEDIR);
-  textdomain (PACKAGE);
-#endif
-
-  init_localeinfo (&localeinfo);
-
-  atexit (clean_up_stdout);
-  c_stack_action (NULL);
-
-  last_recursive = 0;
-
-  prepended = prepend_default_options (getenv ("GREP_OPTIONS"), &argc, &argv);
-  if (prepended)
-    error (0, 0, _("warning: GREP_OPTIONS is deprecated;"
-                   " please use an alias or script"));
-  while (prev_optind = optind,
-         (opt = get_nondigit_option (argc, argv, &default_context)) != -1)
-    switch (opt)
-      {
-      case 'A':
-        context_length_arg (optarg, &out_after);
-        break;
-
-      case 'B':
-        context_length_arg (optarg, &out_before);
-        break;
-
-      case 'C':
-        /* Set output match context, but let any explicit leading or
-           trailing amount specified with -A or -B stand. */
-        context_length_arg (optarg, &default_context);
-        break;
-
-      case 'D':
-        if (STREQ (optarg, "read"))
-          devices = READ_DEVICES;
-        else if (STREQ (optarg, "skip"))
-          devices = SKIP_DEVICES;
-        else
-          die (EXIT_TROUBLE, 0, _("unknown devices method"));
-        break;
-
-      case 'E':
-        matcher = setmatcher ("egrep", matcher);
-        break;
-
-      case 'F':
-        matcher = setmatcher ("fgrep", matcher);
-        break;
-
-      case 'P':
-        matcher = setmatcher ("perl", matcher);
-        break;
-
-      case 'G':
-        matcher = setmatcher ("grep", matcher);
-        break;
-
-      case 'X': /* undocumented on purpose */
-        matcher = setmatcher (optarg, matcher);
-        break;
-
-      case 'H':
-        with_filenames = true;
-        no_filenames = false;
-        break;
-
-      case 'I':
-        binary_files = WITHOUT_MATCH_BINARY_FILES;
-        break;
-
-      case 'T':
-        align_tabs = true;
-        break;
-
-      case 'U':
-        if (O_BINARY)
-          binary = true;
-        break;
-
-      case 'u':
-        /* Obsolete option; it has no effect.  FIXME: Diagnose use of
-           this option starting in (say) the year 2020.  */
-        break;
-
-      case 'V':
-        show_version = true;
-        break;
-
-      case 'a':
-        binary_files = TEXT_BINARY_FILES;
-        break;
-
-      case 'b':
-        out_byte = true;
-        break;
-
-      case 'c':
-        count_matches = true;
-        break;
-
-      case 'd':
-        directories = XARGMATCH ("--directories", optarg,
-                                 directories_args, directories_types);
-        if (directories == RECURSE_DIRECTORIES)
-          last_recursive = prev_optind;
-        break;
-
-      case 'e':
-        cc = strlen (optarg);
-        if (keyalloc < keycc + cc + 1)
-          {
-            keyalloc = keycc + cc + 1;
-            keys = x2realloc (keys, &keyalloc);
-          }
-        oldcc = keycc;
-        memcpy (keys + oldcc, optarg, cc);
-        keycc += cc;
-        keys[keycc++] = '\n';
-        fl_add (keys + oldcc, cc + 1, "");
-        break;
-
-      case 'f':
-        if (STREQ (optarg, "-"))
-          {
-            if (binary)
-              xset_binary_mode (STDIN_FILENO, O_BINARY);
-            fp = stdin;
-          }
-        else
-          {
-            fp = fopen (optarg, binary ? "rb" : "r");
-            if (!fp)
-              die (EXIT_TROUBLE, errno, "%s", optarg);
-          }
-        oldcc = keycc;
-        for (;; keycc += cc)
-          {
-            if (keyalloc <= keycc + 1)
-              keys = x2realloc (keys, &keyalloc);
-            cc = fread (keys + keycc, 1, keyalloc - (keycc + 1), fp);
-            if (cc == 0)
-              break;
-          }
-        fread_errno = errno;
-        if (ferror (fp))
-          die (EXIT_TROUBLE, fread_errno, "%s", optarg);
-        if (fp != stdin)
-          fclose (fp);
-        /* Append final newline if file ended in non-newline. */
-        if (oldcc != keycc && keys[keycc - 1] != '\n')
-          keys[keycc++] = '\n';
-        fl_add (keys + oldcc, keycc - oldcc, optarg);
-        break;
-
-      case 'h':
-        with_filenames = false;
-        no_filenames = true;
-        break;
-
-      case 'i':
-      case 'y':			/* For old-timers . . . */
-        match_icase = true;
-        break;
-
-      case 'L':
-        /* Like -l, except list files that don't contain matches.
-           Inspired by the same option in Hume's gre. */
-        list_files = LISTFILES_NONMATCHING;
-        break;
-
-      case 'l':
-        list_files = LISTFILES_MATCHING;
-        break;
-
-      case 'm':
-        switch (xstrtoimax (optarg, 0, 10, &max_count, ""))
-          {
-          case LONGINT_OK:
-          case LONGINT_OVERFLOW:
-            break;
-
-          default:
-            die (EXIT_TROUBLE, 0, _("invalid max count"));
-          }
-        break;
-
-      case 'n':
-        out_line = true;
-        break;
-
-      case 'o':
-        only_matching = true;
-        break;
-
-      case 'q':
-        exit_on_match = true;
-        exit_failure = 0;
-        break;
-
-      case 'R':
-        fts_options = basic_fts_options | FTS_LOGICAL;
-        FALLTHROUGH;
-      case 'r':
-        directories = RECURSE_DIRECTORIES;
-        last_recursive = prev_optind;
-        break;
-
-      case 's':
-        suppress_errors = true;
-        break;
-
-      case 'v':
-        out_invert = true;
-        break;
-
-      case 'w':
-        wordinit ();
-        match_words = true;
-        break;
-
-      case 'x':
-        match_lines = true;
-        break;
-
-      case 'Z':
-        filename_mask = 0;
-        break;
-
-      case 'z':
-        eolbyte = '\0';
-        break;
-
-      case BINARY_FILES_OPTION:
-        if (STREQ (optarg, "binary"))
-          binary_files = BINARY_BINARY_FILES;
-        else if (STREQ (optarg, "text"))
-          binary_files = TEXT_BINARY_FILES;
-        else if (STREQ (optarg, "without-match"))
-          binary_files = WITHOUT_MATCH_BINARY_FILES;
-        else
-          die (EXIT_TROUBLE, 0, _("unknown binary-files type"));
-        break;
-
-      case COLOR_OPTION:
-        if (optarg)
-          {
-            if (!strcasecmp (optarg, "always") || !strcasecmp (optarg, "yes")
-                || !strcasecmp (optarg, "force"))
-              ctx->options[COLOR_ENABLE] = 1;
-            else if (!strcasecmp (optarg, "never") || !strcasecmp (optarg, "no")
-                     || !strcasecmp (optarg, "none"))
-              ctx->options[COLOR_ENABLE] = 0;
-            else if (!strcasecmp (optarg, "auto") || !strcasecmp (optarg, "tty")
-                     || !strcasecmp (optarg, "if-tty"))
-              ctx->options[COLOR_ENABLE] = 2;
-            else
-              show_help = 1;
-          }
-        else
-          ctx->options[COLOR_ENABLE] = 2;
-        break;
-
-      case EXCLUDE_OPTION:
-      case INCLUDE_OPTION:
-        for (int cmd = 0; cmd < 2; cmd++)
-          {
-            if (!excluded_patterns[cmd])
-              excluded_patterns[cmd] = new_exclude ();
-            add_exclude (excluded_patterns[cmd], optarg,
-                         ((opt == INCLUDE_OPTION ? EXCLUDE_INCLUDE : 0)
-                          | exclude_options (cmd)));
-          }
-        break;
-      case EXCLUDE_FROM_OPTION:
-        for (int cmd = 0; cmd < 2; cmd++)
-          {
-            if (!excluded_patterns[cmd])
-              excluded_patterns[cmd] = new_exclude ();
-            if (add_exclude_file (add_exclude, excluded_patterns[cmd],
-                                  optarg, exclude_options (cmd), '\n')
-                != 0)
-              die (EXIT_TROUBLE, errno, "%s", optarg);
-          }
-        break;
-
-      case EXCLUDE_DIRECTORY_OPTION:
-        strip_trailing_slashes (optarg);
-        for (int cmd = 0; cmd < 2; cmd++)
-          {
-            if (!excluded_directory_patterns[cmd])
-              excluded_directory_patterns[cmd] = new_exclude ();
-            add_exclude (excluded_directory_patterns[cmd], optarg,
-                         exclude_options (cmd));
-          }
-        break;
-
-      case GROUP_SEPARATOR_OPTION:
-        ctx->group_separator = optarg;
-        break;
-
-      case LINE_BUFFERED_OPTION:
-        line_buffered = true;
-        break;
-
-      case LABEL_OPTION:
-        label = optarg;
-        break;
-
-      case 0:
-        /* long options */
-        break;
-
-      default:
-        usage (EXIT_TROUBLE);
-        break;
-
-      }
-
-  if (show_version)
-    {
-      version_etc (stdout, getprogname (), PACKAGE_NAME, VERSION, AUTHORS,
-                   (char *) NULL);
-      return EXIT_SUCCESS;
-    }
-
-  if (show_help)
-    usage (EXIT_SUCCESS);
-
-  if (keys)
-    {
-      if (keycc == 0)
-        {
-          /* No keys were specified (e.g. -f /dev/null).  Match nothing.  */
-          out_invert ^= true;
-          match_lines = match_words = false;
-        }
-      else
-        /* Strip trailing newline. */
-        --keycc;
-    }
-  else if (optind < argc)
-    {
-      /* Make a copy so that it can be reallocated or freed later.  */
-      keycc = strlen (argv[optind]);
-      keys = xmemdup (argv[optind++], keycc + 1);
-      fl_add (keys, keycc, "");
-      ctx->n_patterns++;
-    }
-  else
-    usage (EXIT_TROUBLE);
-
-  bool possibly_tty = false;
-  struct stat tmp_stat;
-  if (! exit_on_match && fstat (STDOUT_FILENO, &tmp_stat) == 0)
-    {
-      if (S_ISREG (tmp_stat.st_mode))
-        out_stat = tmp_stat;
-      else if (S_ISCHR (tmp_stat.st_mode))
-        {
-          struct stat null_stat;
-          if (stat ("/dev/null", &null_stat) == 0
-              && SAME_INODE (tmp_stat, null_stat))
-            dev_null_output = true;
-          else
-            possibly_tty = true;
-        }
-    }
-
-  /* POSIX says -c, -l and -q are mutually exclusive.  In this
-     implementation, -q overrides -l and -L, which in turn override -c.  */
-  if (exit_on_match | dev_null_output)
-    list_files = LISTFILES_NONE;
-  if ((exit_on_match | dev_null_output) || list_files != LISTFILES_NONE)
-    {
-      count_matches = false;
-      done_on_match = true;
-    }
-  out_quiet = count_matches | done_on_match;
-
-  if (out_after < 0)
-    out_after = default_context;
-  if (out_before < 0)
-    out_before = default_context;
-
-  /* If it is easy to see that matching cannot succeed (e.g., 'grep -f
-     /dev/null'), fail without reading the input.  */
-  if ((ctx->options[MATCH_LIMIT] == 0
-       || (keycc == 0 && out_invert && !match_lines && !match_words))
-      && list_files != LISTFILES_NONMATCHING)
-    return EXIT_FAILURE;
-
-  if (ctx->options[COLOR_ENABLE] == 2)
-    ctx->options[COLOR_ENABLE] = possibly_tty && should_colorize () && isatty (STDOUT_FILENO);
-  init_colorize ();
-
-  if (ctx->options[COLOR_ENABLE])
-    {
-      /* Legacy.  */
-      char *userval = getenv ("GREP_COLOR");
-      if (userval != NULL && *userval != '\0')
-        selected_match_color = context_match_color = userval;
-
-      /* New GREP_COLORS has priority.  */
-      parse_grep_colors ();
-    }
-
-  initialize_unibyte_mask ();
-
-  if (matcher < 0)
-    matcher = G_MATCHER_INDEX;
-
-  /* In a single-byte locale, switch from -F to -G if it is a single
-     pattern that matches words, where -G is typically faster.  In a
-     multi-byte locale, switch if the patterns have an encoding error
-     (where -F does not work) or if -i and the patterns will not work
-     for -iF.  */
-  if (matcher == F_MATCHER_INDEX
-      && (! localeinfo.multibyte
-          ? ctx->n_patterns == 1 && match_words
-          : (contains_encoding_error (keys, keycc)
-             || (match_icase && !fgrep_icase_available (keys, keycc)))))
-    {
-      fgrep_to_grep_pattern (&keys, &keycc);
-      matcher = G_MATCHER_INDEX;
-    }
-  /* With two or more patterns, if -F works then switch from either -E
-     or -G, as -F is probably faster then.  */
-  else if ((matcher == G_MATCHER_INDEX || matcher == E_MATCHER_INDEX)
-           && 1 < ctx->n_patterns)
-    matcher = try_fgrep_pattern (matcher, keys, &keycc);
-
-  execute = matchers[matcher].execute;
-  compiled_pattern = matchers[matcher].compile (keys, keycc,
-                                                matchers[matcher].syntax);
-  /* We need one byte prior and one after.  */
-  char eolbytes[3] = { 0, eolbyte, 0 };
-  size_t match_size;
-  skip_empty_lines = ((execute (compiled_pattern, eolbytes + 1, 1,
-                                &match_size, NULL) == 0)
-                      == out_invert);
-
-  if ((argc - optind > 1 && !no_filenames) || with_filenames)
-    out_file = 1;
-
-  if (binary)
-    xset_binary_mode (STDOUT_FILENO, O_BINARY);
-
-  /* Prefer sysconf for page size, as getpagesize typically returns int.  */
-#ifdef _SC_PAGESIZE
-  long psize = sysconf (_SC_PAGESIZE);
-#else
-  long psize = getpagesize ();
-#endif
-  if (! (0 < psize && psize <= (SIZE_MAX - sizeof (uword)) / 2))
-    abort ();
-  pagesize = psize;
-  bufalloc = ALIGN_TO (INITIAL_BUFSIZE, pagesize) + pagesize + sizeof (uword);
-  buffer = xmalloc (bufalloc);
-
-  if (fts_options & FTS_LOGICAL && devices == READ_COMMAND_LINE_DEVICES)
-    devices = READ_DEVICES;
-
-  char *const *files;
-  if (optind < argc)
-    {
-      files = argv + optind;
-    }
-  else if (directories == RECURSE_DIRECTORIES && prepended < last_recursive)
-    {
-      static char *const cwd_only[] = { (char *) ".", NULL };
-      files = cwd_only;
-      omit_dot_slash = true;
-    }
-  else
-    {
-      static char *const stdin_only[] = { (char *) "-", NULL };
-      files = stdin_only;
-    }
-
-  bool status = true;
-  do
-    status &= grep_command_line_arg (*files++);
-  while (*files != NULL);
-
-  /* We register via atexit to test stdout.  */
-  return ctx->errseen ? EXIT_TROUBLE : status;
-}
-
-#endif
-
 void init_globals(struct grep_ctx *ctx) {
   /* Prefer sysconf for page size, as getpagesize typically returns int.  */
   long psize = 4096;
@@ -3044,6 +1633,8 @@ void init_globals(struct grep_ctx *ctx) {
 
   initialize_unibyte_mask (ctx);
   init_localeinfo (&ctx->localeinfo);
+  devices = READ_DEVICES;
+  binary_files = TEXT_BINARY_FILES;
 }
 
 void clean_globals(struct grep_ctx *ctx) {
