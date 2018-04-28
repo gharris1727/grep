@@ -684,9 +684,6 @@ fillbuf (struct grep_ctx *ctx, size_t save, struct stat const *st)
           /* Solaris SEEK_DATA fails with errno == ENXIO in a hole at EOF.  */
           off_t data_start = kern_lseek (ctx->td, bufdesc, bufoffset, SEEK_DATA);
           if (data_start < 0 
-#if 0
-                  && errno == ENXIO
-#endif
               && usable_st_size (st) && bufoffset < st->st_size)
             data_start = kern_lseek (ctx->td, bufdesc, 0, SEEK_END);
 
@@ -1390,7 +1387,7 @@ finalize_input (struct grep_ctx *ctx, int fd, struct stat const *st, bool ineof)
              && (ctx->seek_failed
                  || (kern_lseek (ctx->td, fd, 0, SEEK_END) < 0
                      /* Linux proc file system has EINVAL (Bug#25180).  */
-                     && errno != EINVAL))
+                     && ctx->td->td_errno != EINVAL))
              && ! drain_input (ctx, fd, st))
           : (bufoffset != after_last_match && !ctx->seek_failed
              && kern_lseek (ctx->td, fd, after_last_match, SEEK_SET) < 0)))
