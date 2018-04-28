@@ -1,0 +1,15 @@
+--- config.h	2018-04-28 21:54:35.068982000 +0000
++++ config.h	2018-04-28 21:57:23.994434000 +0000
+@@ -2234,6 +2234,12 @@
+ /* Define to 1 to make NetBSD features available. MINIX 3 needs this. */
+ #define _NETBSD_SOURCE 1
+ 
++#define ENABLE_RELOCATABLE 0
++#undef HAVE_LANGINFO_CODESET
++#define HAVE_LANGINFO_CODESET 0
++#define ENABLE_NLS 0
++#include <sys/cdefs.h>
++
+ /* The _Noreturn keyword of C11.  */
+ #if ! (defined _Noreturn \
+        || (defined __STDC_VERSION__ && 201112 <= __STDC_VERSION__))

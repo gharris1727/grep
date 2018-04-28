@@ -13,6 +13,7 @@
 /build-aux/compile
 /config.cache
 /config.h
+/config.h.orig
 /config.hin
 /config.log
 /config.status
