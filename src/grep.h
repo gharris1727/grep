@@ -24,8 +24,7 @@
 #include <slbuf.h>
 #include "../../match.h"
 
-bool grepfile (struct grep_ctx *, int, char const *, bool, bool);
-bool grepdesc (struct grep_ctx *, int, bool);
+bool grep_reenter(struct grep_ctx *);
 
 void parse_grep_colors (struct grep_ctx *, const char *);
 void init_globals(struct grep_ctx *);

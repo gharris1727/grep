@@ -1142,163 +1142,122 @@ grepbuf (struct grep_ctx *ctx, char *beg, char const *lim)
 
 /* Search a given (non-directory) file.  Return a count of lines printed.
    Set *INEOF to true if end-of-file reached.  */
-static intmax_t
-grep (struct grep_ctx *ctx, int fd, struct stat const *st, bool *ineof)
+static bool
+grep_run (struct grep_ctx *ctx)
 {
-  intmax_t nlines, i;
-  size_t residue, save;
-  char oldc;
-  char *beg;
-  char *lim;
-  char eol = ctx->options[NULL_BOUND] ? '\0' : '\n';
-  char nul_zapper = '\0';
-  bool done_on_match_0 = done_on_match;
-  bool out_quiet_0 = out_quiet;
+    int fd = ctx->head->next->cur_fd;
+    struct stat const *st = &ctx->st;
+    char eol = ctx->options[NULL_BOUND] ? '\0' : '\n';
+    char nul_zapper = '\0';
+    ctx->done_on_match_0 = done_on_match;
+    ctx->out_quiet_0 = out_quiet;
 
-  /* The value of NLINES when nulls were first deduced in the input;
-     this is not necessarily the same as the number of matching lines
-     before the first null.  -1 if no input nulls have been deduced.  */
-  intmax_t nlines_first_null = -1;
+    for (bool firsttime = true; ; firsttime = false)
+    {
+        if (ctx->nlines_first_null < 0 && eol && binary_files != TEXT_BINARY_FILES
+                && (buf_has_nulls (bufbeg, buflim - bufbeg)
+                    || (firsttime && file_must_have_nulls (ctx, buflim - bufbeg, fd, st))))
+        {
+            if (binary_files == WITHOUT_MATCH_BINARY_FILES) {
+                ctx->state = CLOSE;
+                break;
+            }
+            if (!ctx->options[COUNT])
+                done_on_match = out_quiet = true;
+            ctx->nlines_first_null = ctx->nlines;
+            nul_zapper = eol;
+            skip_nuls = skip_empty_lines;
+        }
 
-  if (! reset (ctx, fd, st))
+        lastnl = bufbeg;
+        if (lastout)
+            lastout = bufbeg;
+
+        ctx->beg = bufbeg + ctx->save;
+
+        /* no more data to scan (eof) except for maybe a residue -> break */
+        if (ctx->beg == buflim)
+        {
+            ctx->ineof = true;
+            if (ctx->residue)
+            {
+                *buflim++ = eol;
+                if (outleft)
+                    ctx->nlines += grepbuf (ctx, bufbeg + ctx->save - ctx->residue, buflim);
+                if (pending)
+                    prpending (ctx, buflim);
+            }
+            // Jump out of the loop to the next stage!
+            ctx->state = POSTPROCESS;
+            break;
+        }
+
+        zap_nuls (ctx->beg, buflim, nul_zapper);
+
+        /* Determine new residue (the length of an incomplete line at the end of
+           the buffer, 0 means there is no incomplete last line).  */
+        ctx->oldc = ctx->beg[-1];
+        ctx->beg[-1] = eol;
+        /* FIXME: use rawmemrchr if/when it exists, since we have ensured
+           that this use of memrchr is guaranteed never to return NULL.  */
+        ctx->lim = memrchr (ctx->beg - 1, eol, buflim - ctx->beg + 1);
+        ++ctx->lim;
+        ctx->beg[-1] = ctx->oldc;
+        if (ctx->lim == ctx->beg)
+            ctx->lim = ctx->beg - ctx->residue;
+        ctx->beg -= ctx->residue;
+        ctx->residue = buflim - ctx->lim;
+
+        if (ctx->beg < ctx->lim)
+        {
+            if (outleft)
+                ctx->nlines += grepbuf (ctx, ctx->beg, ctx->lim);
+            if (pending)
+                prpending (ctx, ctx->lim);
+            if ((!outleft && !pending)
+                    || (done_on_match && MAX (0, ctx->nlines_first_null) < ctx->nlines)) {
+                // Jump out of the loop to the next stage!
+                ctx->state = POSTPROCESS;
+                break;
+            }
+        }
+
+        /* The last OUT_BEFORE lines at the end of the buffer will be needed as
+           leading context if there is a matching line at the begin of the
+           next data. Make beg point to their begin.  */
+        intmax_t i = 0;
+        ctx->beg = ctx->lim;
+        while (i < ctx->options[CONTEXT_BEFORE] && ctx->beg > bufbeg && ctx->beg != lastout)
+        {
+            ++i;
+            do
+                --ctx->beg;
+            while (ctx->beg[-1] != eol);
+        }
+
+        /* Detect whether leading context is adjacent to previous output.  */
+        if (ctx->beg != lastout)
+            lastout = 0;
+
+        /* Handle some details and read more data to scan.  */
+        ctx->save = ctx->residue + ctx->lim - ctx->beg;
+        if (out_byte)
+            totalcc = add_count (totalcc, buflim - bufbeg - ctx->save);
+        if (out_line)
+            nlscan (ctx, ctx->beg);
+        if (! fillbuf (ctx, ctx->save, st))
+        {
+            suppressible_error (ctx, EFAULT);
+            // bail out because we faulted trying to fill the buffer.
+            ctx->state = CLOSE;
+            break;
+        }
+        if (slbuf_full(ctx->out)) {
+            // Yield execution to the next call.
+            break;
+        }
+    }
     return 0;
-
-  totalcc = 0;
-  lastout = 0;
-  totalnl = 0;
-  outleft = ctx->options[MATCH_LIMIT];
-  after_last_match = 0;
-  pending = 0;
-  skip_nuls = skip_empty_lines && !eol;
-  ctx->encoding_error_output = false;
-
-  nlines = 0;
-  residue = 0;
-  save = 0;
-
-  if (! fillbuf (ctx, save, st))
-    {
-      suppressible_error (ctx, EFAULT);
-      return 0;
-    }
-
-  ctx->offset_width = 0;
-  if (ctx->options[TAB_ALIGN])
-    {
-      /* Width is log of maximum number.  Line numbers are origin-1.  */
-      uintmax_t num = usable_st_size (st) ? st->st_size : UINTMAX_MAX;
-      num += out_line && num < UINTMAX_MAX;
-      do
-        ctx->offset_width++;
-      while ((num /= 10) != 0);
-    }
-
-  for (bool firsttime = true; ; firsttime = false)
-    {
-      if (nlines_first_null < 0 && eol && binary_files != TEXT_BINARY_FILES
-          && (buf_has_nulls (bufbeg, buflim - bufbeg)
-              || (firsttime && file_must_have_nulls (ctx, buflim - bufbeg, fd, st))))
-        {
-          if (binary_files == WITHOUT_MATCH_BINARY_FILES) {
-            return 0;
-          }
-          if (!ctx->options[COUNT])
-            done_on_match = out_quiet = true;
-          nlines_first_null = nlines;
-          nul_zapper = eol;
-          skip_nuls = skip_empty_lines;
-        }
-
-      lastnl = bufbeg;
-      if (lastout)
-        lastout = bufbeg;
-
-      beg = bufbeg + save;
-
-      /* no more data to scan (eof) except for maybe a residue -> break */
-      if (beg == buflim)
-        {
-          *ineof = true;
-          break;
-        }
-
-      zap_nuls (beg, buflim, nul_zapper);
-
-      /* Determine new residue (the length of an incomplete line at the end of
-         the buffer, 0 means there is no incomplete last line).  */
-      oldc = beg[-1];
-      beg[-1] = eol;
-      /* FIXME: use rawmemrchr if/when it exists, since we have ensured
-         that this use of memrchr is guaranteed never to return NULL.  */
-      lim = memrchr (beg - 1, eol, buflim - beg + 1);
-      ++lim;
-      beg[-1] = oldc;
-      if (lim == beg)
-        lim = beg - residue;
-      beg -= residue;
-      residue = buflim - lim;
-
-      if (beg < lim)
-        {
-          if (outleft)
-            nlines += grepbuf (ctx, beg, lim);
-          if (pending)
-            prpending (ctx, lim);
-          if ((!outleft && !pending)
-              || (done_on_match && MAX (0, nlines_first_null) < nlines)) {
-            goto finish_grep;
-          }
-        }
-
-      /* The last OUT_BEFORE lines at the end of the buffer will be needed as
-         leading context if there is a matching line at the begin of the
-         next data. Make beg point to their begin.  */
-      i = 0;
-      beg = lim;
-      while (i < ctx->options[CONTEXT_BEFORE] && beg > bufbeg && beg != lastout)
-        {
-          ++i;
-          do
-            --beg;
-          while (beg[-1] != eol);
-        }
-
-      /* Detect whether leading context is adjacent to previous output.  */
-      if (beg != lastout)
-        lastout = 0;
-
-      /* Handle some details and read more data to scan.  */
-      save = residue + lim - beg;
-      if (out_byte)
-        totalcc = add_count (totalcc, buflim - bufbeg - save);
-      if (out_line)
-        nlscan (ctx, beg);
-      if (! fillbuf (ctx, save, st))
-        {
-          suppressible_error (ctx, EFAULT);
-          goto finish_grep;
-        }
-    }
-  if (residue)
-    {
-      *buflim++ = eol;
-      if (outleft)
-        nlines += grepbuf (ctx, bufbeg + save - residue, buflim);
-      if (pending)
-        prpending (ctx, buflim);
-    }
-
- finish_grep:
-  done_on_match = done_on_match_0;
-  out_quiet = out_quiet_0;
-  if (!out_quiet && (ctx->encoding_error_output
-                     || (0 <= nlines_first_null && nlines_first_null < nlines)))
-    {
-      printf_errno (ctx, _("Binary file %s matches\n"), input_filename (ctx));
-      if (line_buffered)
-        fflush_errno ();
-    }
-  return nlines;
 }
 
 /* True if errno is ERR after 'open ("symlink", ... O_NOFOLLOW ...)'.
@@ -1315,22 +1274,42 @@ open_symlink_nofollow_error (int err)
   return false;
 }
 
-bool
-grepfile (struct grep_ctx *ctx, int dirdesc, char const *name, bool follow, bool command_line)
+static bool
+grep_open_file (struct grep_ctx *ctx)
 {
-  int oflag = (O_RDONLY | O_NOCTTY
-               | (IGNORE_DUPLICATE_BRANCH_WARNING
-                  (binary ? O_BINARY : 0))
-               | (follow ? 0 : O_NOFOLLOW)
-               | (skip_devices (command_line) ? O_NONBLOCK : 0));
-  int desc = kern_openat (ctx->td, dirdesc, (char*) (intptr_t) name, UIO_SYSSPACE, oflag, 0644) ? EIO : ctx->td->td_retval[0];
-  if (desc < 0)
-    {
-      if (follow || ! open_symlink_nofollow_error (EFAULT))
-        suppressible_error (ctx, EFAULT);
-      return true;
+    if (ctx->head->next == ctx->tail) {
+        // Bail out because there is no work to be done.
+        return 1;
     }
-  return grepdesc (ctx, desc, command_line);
+    int dirdesc = ctx->head->next->at_fd;
+    char *name = ctx->head->next->name;
+    bool follow = (dirdesc == AT_FDCWD);
+    bool command_line = (dirdesc == AT_FDCWD);
+
+    int oflag = (O_RDONLY | O_NOCTTY
+            | (IGNORE_DUPLICATE_BRANCH_WARNING
+                (binary ? O_BINARY : 0))
+            | (follow ? 0 : O_NOFOLLOW)
+            | (skip_devices (command_line) ? O_NONBLOCK : 0));
+    ctx->head->next->cur_fd = kern_openat (ctx->td, dirdesc, (char*) (intptr_t) name, UIO_SYSSPACE, oflag, 0644) ? EIO : ctx->td->td_retval[0];
+    if (ctx->head->next->cur_fd < 0)
+    {
+        if (follow || ! open_symlink_nofollow_error (EFAULT))
+            suppressible_error (ctx, EFAULT);
+        // Jump to CLOSE to skip past this file.
+        ctx->state = CLOSE;
+        return true;
+    }
+    // Move to PREPROCESSING to actually inspect this file.
+    ctx->state = PREPROCESS;
+    return false;
+}
+
+static bool
+grep_close_file (struct grep_ctx *ctx) {
+    match_rem_file (ctx, ctx->head->next);
+    ctx->state = NEW;
+    return 0;
 }
 
 /* Read all data from FD, with status ST.  Return true if successful,
@@ -1379,11 +1358,13 @@ drain_input (struct grep_ctx *ctx, int fd, struct stat const *st)
    pipe.  */
 
 static void
-finalize_input (struct grep_ctx *ctx, int fd, struct stat const *st, bool ineof)
+finalize_input (struct grep_ctx *ctx)
 {
+    int fd = ctx->head->next->cur_fd;
+    struct stat *st = &ctx->st;
   if (fd == STDIN_FILENO
       && (outleft
-          ? (!ineof
+          ? (!ctx->ineof
              && (ctx->seek_failed
                  || (kern_lseek (ctx->td, fd, 0, SEEK_END) < 0
                      /* Linux proc file system has EINVAL (Bug#25180).  */
@@ -1394,112 +1375,178 @@ finalize_input (struct grep_ctx *ctx, int fd, struct stat const *st, bool ineof)
     suppressible_error (ctx, EFAULT);
 }
 
-bool
-grepdesc (struct grep_ctx *ctx, int desc, bool command_line)
+static bool
+grep_preprocess (struct grep_ctx *ctx)
 {
-  intmax_t count;
-  bool status = true;
-  bool ineof = false;
-  struct stat st;
+    int desc = ctx->head->next->cur_fd;
+    bool command_line = (ctx->head->next->at_fd == AT_FDCWD);
 
-  /* Get the file status, possibly for the second time.  This catches
-     a race condition if the directory entry changes after the
-     directory entry is read and before the file is opened.  For
-     example, normally DESC is a directory only at the top level, but
-     there is an exception if some other process substitutes a
-     directory for a non-directory while 'grep' is running.  */
-  if (kern_fstat (ctx->td, desc, &st) != 0)
+    /* Get the file status, possibly for the second time.  This catches
+       a race condition if the directory entry changes after the
+       directory entry is read and before the file is opened.  For
+       example, normally DESC is a directory only at the top level, but
+       there is an exception if some other process substitutes a
+       directory for a non-directory while 'grep' is running.  */
+    if (kern_fstat (ctx->td, desc, &ctx->st) != 0)
     {
-      suppressible_error (ctx, EFAULT);
-      goto closeout;
+        suppressible_error (ctx, EFAULT);
+        goto closeout;
     }
 
-  if (desc != STDIN_FILENO && skip_devices (command_line)
-      && is_device_mode (st.st_mode))
-    goto closeout;
+    if (desc != STDIN_FILENO && skip_devices (command_line)
+            && is_device_mode (ctx->st.st_mode))
+        goto closeout;
 
 #if 0
-  if (desc != STDIN_FILENO && command_line
-      && skipped_file (filename, true, S_ISDIR (st.st_mode) != 0))
-    goto closeout;
+    if (desc != STDIN_FILENO && command_line
+            && skipped_file (filename, true, S_ISDIR (st.st_mode) != 0))
+        goto closeout;
 #endif
 
-  if (desc != STDIN_FILENO
-      && directories == RECURSE_DIRECTORIES && S_ISDIR (st.st_mode))
+    if (desc != STDIN_FILENO
+            && directories == RECURSE_DIRECTORIES && S_ISDIR (ctx->st.st_mode))
     {
-      /* Traverse the directory starting with its full name, because
-         unfortunately fts provides no way to traverse the directory
-         starting from its file descriptor.  */
+        /* Traverse the directory starting with its full name, because
+           unfortunately fts provides no way to traverse the directory
+           starting from its file descriptor.  */
 
-      uprintf("Trying to recurse into subdirectories!\n");
+        uprintf("Trying to recurse into subdirectories!\n");
+        goto closeout;
     }
-  if (desc != STDIN_FILENO
-      && ((directories == SKIP_DIRECTORIES && S_ISDIR (st.st_mode))
-          || ((devices == SKIP_DEVICES
-               || (devices == READ_COMMAND_LINE_DEVICES && !command_line))
-              && is_device_mode (st.st_mode))))
-    goto closeout;
+    if (desc != STDIN_FILENO
+            && ((directories == SKIP_DIRECTORIES && S_ISDIR (ctx->st.st_mode))
+                || ((devices == SKIP_DEVICES
+                        || (devices == READ_COMMAND_LINE_DEVICES && !command_line))
+                    && is_device_mode (ctx->st.st_mode))))
+        goto closeout;
 
-  /* If there is a regular file on stdout and the current file refers
-     to the same i-node, we have to report the problem and skip it.
-     Otherwise when matching lines from some other input reach the
-     disk before we open this file, we can end up reading and matching
-     those lines and appending them to the file from which we're reading.
-     Then we'd have what appears to be an infinite loop that'd terminate
-     only upon filling the output file system or reaching a quota.
-     However, there is no risk of an infinite loop if grep is generating
-     no output, i.e., with --silent, --quiet, -q.
-     Similarly, with any of these:
+    /* If there is a regular file on stdout and the current file refers
+       to the same i-node, we have to report the problem and skip it.
+       Otherwise when matching lines from some other input reach the
+       disk before we open this file, we can end up reading and matching
+       those lines and appending them to the file from which we're reading.
+       Then we'd have what appears to be an infinite loop that'd terminate
+       only upon filling the output file system or reaching a quota.
+       However, there is no risk of an infinite loop if grep is generating
+       no output, i.e., with --silent, --quiet, -q.
+       Similarly, with any of these:
        --max-count=N (-m) (for N >= 2)
        --files-with-matches (-l)
        --files-without-match (-L)
-     there is no risk of trouble.
-     For --max-count=1, grep stops after printing the first match,
-     so there is no risk of malfunction.  But even --max-count=2, with
-     input==output, while there is no risk of infloop, there is a race
-     condition that could result in "alternate" output.  */
-  if (!out_quiet && list_files == LISTFILES_NONE && 1 < ctx->options[MATCH_LIMIT]
-      && S_ISREG (st.st_mode) && SAME_INODE (st, out_stat))
+       there is no risk of trouble.
+       For --max-count=1, grep stops after printing the first match,
+       so there is no risk of malfunction.  But even --max-count=2, with
+       input==output, while there is no risk of infloop, there is a race
+       condition that could result in "alternate" output.  */
+    if (!out_quiet && list_files == LISTFILES_NONE && 1 < ctx->options[MATCH_LIMIT]
+            && S_ISREG (ctx->st.st_mode) && SAME_INODE (ctx->st, out_stat))
     {
-      if (! ctx->options[SUPPRESS_ERRORS])
-        error (0, 0, _("input file %s is also the output"),
-               quote (input_filename (ctx)));
-      ctx->errseen = true;
-      goto closeout;
+        if (! ctx->options[SUPPRESS_ERRORS])
+            error (0, 0, _("input file %s is also the output"),
+                    quote (input_filename (ctx)));
+        ctx->errseen = true;
+        goto closeout;
     }
 
-  count = grep (ctx, desc, &st, &ineof);
-  if (ctx->options[COUNT])
+    // Fall through and initialize the matcher to start running.
+
+    /* The value of NLINES when nulls were first deduced in the input;
+       this is not necessarily the same as the number of matching lines
+       before the first null.  -1 if no input nulls have been deduced.  */
+    ctx->nlines_first_null = -1;
+
+    int fd = ctx->head->next->cur_fd;
+    struct stat const *st = &ctx->st;
+    char eol = ctx->options[NULL_BOUND] ? '\0' : '\n';
+
+    if (! reset (ctx, fd, st))
+        return 0;
+
+
+    totalcc = 0;
+    lastout = 0;
+    totalnl = 0;
+    outleft = ctx->options[MATCH_LIMIT];
+    after_last_match = 0;
+    pending = 0;
+    skip_nuls = skip_empty_lines && !eol;
+    ctx->encoding_error_output = false;
+
+    ctx->nlines = 0;
+    ctx->residue = 0;
+    ctx->save = 0;
+
+    if (! fillbuf (ctx, ctx->save, st))
     {
-      if (out_file)
+        suppressible_error (ctx, EFAULT);
+        goto closeout;
+    }
+
+    ctx->offset_width = 0;
+    if (ctx->options[TAB_ALIGN])
+    {
+        /* Width is log of maximum number.  Line numbers are origin-1.  */
+        uintmax_t num = usable_st_size (st) ? st->st_size : UINTMAX_MAX;
+        num += out_line && num < UINTMAX_MAX;
+        do
+            ctx->offset_width++;
+        while ((num /= 10) != 0);
+    }
+
+    // We're ready to run!
+    ctx->state = RUN_MATCH;
+    return 0;
+
+closeout:
+    // There was some reason to skip this file, so jump to CLOSE.
+    ctx->state = CLOSE;
+    return 0;
+}
+
+static bool
+grep_postprocess (struct grep_ctx *ctx)
+{
+
+    done_on_match = ctx->done_on_match_0;
+    out_quiet = ctx->out_quiet_0;
+    if (!out_quiet && (ctx->encoding_error_output
+                || (0 <= ctx->nlines_first_null && ctx->nlines_first_null < ctx->nlines)))
+    {
+        printf_errno (ctx, _("Binary file %s matches\n"), input_filename (ctx));
+        if (line_buffered)
+            fflush_errno ();
+    }
+
+    bool status;
+    if (ctx->options[COUNT])
+    {
+        if (out_file)
         {
-          print_filename (ctx);
-          if (filename_mask)
-            print_sep (ctx, SEP_CHAR_SELECTED);
-          else
-            putchar_errno (ctx, 0);
+            print_filename (ctx);
+            if (filename_mask)
+                print_sep (ctx, SEP_CHAR_SELECTED);
+            else
+                putchar_errno (ctx, 0);
         }
-      printf_errno (ctx, "%" PRIdMAX "\n", count);
-      if (line_buffered)
-        fflush_errno ();
+        printf_errno (ctx, "%" PRIdMAX "\n", ctx->count);
+        if (line_buffered)
+            fflush_errno ();
     }
 
-  status = !count == !(list_files == LISTFILES_NONMATCHING);
+    status = !ctx->count == !(list_files == LISTFILES_NONMATCHING);
 
-  if (list_files == LISTFILES_NONE)
-    finalize_input (ctx, desc, &st, ineof);
-  else if (status == 0)
+    if (list_files == LISTFILES_NONE)
+        finalize_input (ctx);
+    else if (status == 0)
     {
-      print_filename (ctx);
-      putchar_errno (ctx, '\n' & filename_mask);
-      if (line_buffered)
-        fflush_errno ();
+        print_filename (ctx);
+        putchar_errno (ctx, '\n' & filename_mask);
+        if (line_buffered)
+            fflush_errno ();
     }
 
- closeout:
-  if (desc != STDIN_FILENO && kern_close (ctx->td, desc) != 0)
-    suppressible_error (ctx, EFAULT);
-  return status;
+    ctx->state = CLOSE;
+    return status;
 }
 
 /* Pattern compilers and matchers.  */
@@ -1616,6 +1663,22 @@ fgrep_to_grep_pattern (struct grep_ctx *ctx, char **keys_p, size_t *len_p)
   free (*keys_p);
   *keys_p = new_keys;
   *len_p = p - new_keys;
+}
+
+bool
+grep_reenter(struct grep_ctx *ctx) {
+    switch (ctx->state) {
+        case NEW:
+            return grep_open_file(ctx);
+        case PREPROCESS:
+            return grep_preprocess(ctx);
+        case RUN_MATCH:
+            return grep_run(ctx);
+        case POSTPROCESS:
+            return grep_postprocess(ctx);
+        case CLOSE:
+            return grep_close_file(ctx);
+    }
 }
 
 void init_globals(struct grep_ctx *ctx) {
