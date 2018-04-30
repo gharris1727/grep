@@ -1291,14 +1291,16 @@ grep_open_file (struct grep_ctx *ctx)
                 (binary ? O_BINARY : 0))
             | (follow ? 0 : O_NOFOLLOW)
             | (skip_devices (command_line) ? O_NONBLOCK : 0));
-    ctx->head->next->cur_fd = kern_openat (ctx->td, dirdesc, (char*) (intptr_t) name, UIO_SYSSPACE, oflag, 0644) ? EIO : ctx->td->td_retval[0];
-    if (ctx->head->next->cur_fd < 0)
+
+    if (kern_openat (ctx->td, dirdesc, name, UIO_SYSSPACE, oflag, 0644))
     {
         if (follow || ! open_symlink_nofollow_error (EFAULT))
             suppressible_error (ctx, EFAULT);
         // Jump to CLOSE to skip past this file.
         ctx->state = CLOSE;
         return true;
+    } else {
+        ctx->head->next->cur_fd =  ctx->td->td_retval[0];
     }
     // Move to PREPROCESSING to actually inspect this file.
     ctx->state = PREPROCESS;
@@ -1387,15 +1389,19 @@ grep_preprocess (struct grep_ctx *ctx)
        example, normally DESC is a directory only at the top level, but
        there is an exception if some other process substitutes a
        directory for a non-directory while 'grep' is running.  */
-    if (kern_fstat (ctx->td, desc, &ctx->st) != 0)
+    if (kern_fstat (ctx->td, desc, &(ctx->st)) != 0)
     {
         suppressible_error (ctx, EFAULT);
-        goto closeout;
+        ctx->state = CLOSE;
+        return 0;
     }
 
     if (desc != STDIN_FILENO && skip_devices (command_line)
-            && is_device_mode (ctx->st.st_mode))
-        goto closeout;
+            && is_device_mode (ctx->st.st_mode)) {
+
+        ctx->state = CLOSE;
+        return 0;
+    }
 
 #if 0
     if (desc != STDIN_FILENO && command_line
@@ -1410,15 +1416,18 @@ grep_preprocess (struct grep_ctx *ctx)
            unfortunately fts provides no way to traverse the directory
            starting from its file descriptor.  */
 
-        uprintf("Trying to recurse into subdirectories!\n");
-        goto closeout;
+        ctx->state = CLOSE;
+        return 0;
     }
     if (desc != STDIN_FILENO
             && ((directories == SKIP_DIRECTORIES && S_ISDIR (ctx->st.st_mode))
                 || ((devices == SKIP_DEVICES
                         || (devices == READ_COMMAND_LINE_DEVICES && !command_line))
-                    && is_device_mode (ctx->st.st_mode))))
-        goto closeout;
+                    && is_device_mode (ctx->st.st_mode)))) {
+
+        ctx->state = CLOSE;
+        return 0;
+    }
 
     /* If there is a regular file on stdout and the current file refers
        to the same i-node, we have to report the problem and skip it.
@@ -1445,7 +1454,9 @@ grep_preprocess (struct grep_ctx *ctx)
             error (0, 0, _("input file %s is also the output"),
                     quote (input_filename (ctx)));
         ctx->errseen = true;
-        goto closeout;
+
+        ctx->state = CLOSE;
+        return 0;
     }
 
     // Fall through and initialize the matcher to start running.
@@ -1459,8 +1470,10 @@ grep_preprocess (struct grep_ctx *ctx)
     struct stat const *st = &ctx->st;
     char eol = ctx->options[NULL_BOUND] ? '\0' : '\n';
 
-    if (! reset (ctx, fd, st))
+    if (! reset (ctx, fd, st)) {
+        ctx->state = CLOSE;
         return 0;
+    }
 
 
     totalcc = 0;
@@ -1479,7 +1492,8 @@ grep_preprocess (struct grep_ctx *ctx)
     if (! fillbuf (ctx, ctx->save, st))
     {
         suppressible_error (ctx, EFAULT);
-        goto closeout;
+        ctx->state = CLOSE;
+        return 0;
     }
 
     ctx->offset_width = 0;
@@ -1495,11 +1509,6 @@ grep_preprocess (struct grep_ctx *ctx)
 
     // We're ready to run!
     ctx->state = RUN_MATCH;
-    return 0;
-
-closeout:
-    // There was some reason to skip this file, so jump to CLOSE.
-    ctx->state = CLOSE;
     return 0;
 }
 
