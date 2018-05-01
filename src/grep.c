@@ -1255,6 +1255,9 @@ grep_run (struct grep_ctx *ctx)
         if (slbuf_full(ctx->out)) {
             // Yield execution to the next call.
             break;
+        } else {
+            // Try yielding execution to another thread.
+            maybe_yield();
         }
     }
     return 0;

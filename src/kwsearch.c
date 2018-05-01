@@ -162,22 +162,25 @@ Fexecute (struct grep_ctx *ctx, void *vcp, char const *buf, size_t size, size_t 
   struct kwsearch *kwsearch = vcp;
   kwset_t kwset = kwsearch->kwset;
 
-  if (ctx->options[MATCH_LINE])
+  bool match_line = ctx->options[MATCH_LINE],
+    match_word = ctx->options[MATCH_WORD];
+
+  if (match_line)
     mb_check = longest = false;
   else
     {
       mb_check = ctx->localeinfo.multibyte & !ctx->localeinfo.using_utf8;
-      longest = mb_check | !!start_ptr | ctx->options[MATCH_WORD];
+      longest = mb_check | !!start_ptr | match_word;
     }
 
   for (mb_start = beg = start_ptr ? start_ptr : buf; beg <= buf + size; beg++)
     {
-      ptrdiff_t offset = kwsexec (kwset, beg - ctx->options[MATCH_LINE],
-                                  buf + size - beg + ctx->options[MATCH_LINE], &kwsmatch,
+      ptrdiff_t offset = kwsexec (kwset, beg - match_line,
+                                  buf + size - beg + match_line, &kwsmatch,
                                   longest);
       if (offset < 0)
         break;
-      len = kwsmatch.size[0] - 2 * ctx->options[MATCH_LINE];
+      len = kwsmatch.size[0] - 2 * match_line;
 
       if (kwsearch->words <= kwsmatch.index)
         {
@@ -214,14 +217,14 @@ Fexecute (struct grep_ctx *ctx, void *vcp, char const *buf, size_t size, size_t 
           continue;
         }
       beg += offset;
-      if (!!start_ptr & !ctx->options[MATCH_WORD])
+      if (!!start_ptr & !match_word)
         goto success_in_beg_and_len;
-      if (ctx->options[MATCH_LINE])
+      if (match_line)
         {
           len += start_ptr == NULL;
           goto success_in_beg_and_len;
         }
-      if (! ctx->options[MATCH_WORD])
+      if (! match_word)
         goto success;
 
       /* Succeed if the preceding and following characters are word

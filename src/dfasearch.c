@@ -230,6 +230,9 @@ EGexecute (struct grep_ctx *ctx, void *vdc, char const *buf, size_t size, size_t
   struct dfa *superset = dfasuperset (dc->dfa);
   bool dfafast = dfaisfast (dc->dfa);
 
+  bool match_word = ctx->options[MATCH_WORD],
+    match_line = ctx->options[MATCH_LINE];
+
   mb_start = buf;
   buflim = buf + size;
 
@@ -359,7 +362,7 @@ EGexecute (struct grep_ctx *ctx, void *vdc, char const *buf, size_t size, size_t
       for (i = 0; i < dc->pcount; i++)
         {
           dc->patterns[i].not_eol = 0;
-          dc->patterns[i].newline_anchor = !ctx->options[NULL_BOUND];
+          dc->patterns[i].newline_anchor = eol;
           start = re_search (&dc->patterns[i], beg, end - beg - 1,
                              ptr - beg, end - ptr - 1, &dc->regs);
           if (start < -1)
@@ -370,10 +373,10 @@ EGexecute (struct grep_ctx *ctx, void *vdc, char const *buf, size_t size, size_t
               match = beg + start;
               if (match > best_match)
                 continue;
-              if (start_ptr && !ctx->options[MATCH_WORD])
+              if (start_ptr && !match_word)
                 goto assess_pattern_match;
-              if ((!ctx->options[MATCH_LINE] && !ctx->options[MATCH_WORD])
-                  || (ctx->options[MATCH_LINE] && len == end - ptr - 1))
+              if ((!match_line && !match_word)
+                  || (match_line && len == end - ptr - 1))
                 {
                   match = ptr;
                   len = end - ptr;
@@ -386,7 +389,7 @@ EGexecute (struct grep_ctx *ctx, void *vdc, char const *buf, size_t size, size_t
                  (b) Several alternatives in the pattern might be valid at a
                  given point, and we may need to consider a shorter one to
                  find a word boundary.  */
-              if (!ctx->options[MATCH_LINE] && ctx->options[MATCH_WORD])
+              if (!match_line && match_word)
                 while (match <= best_match)
                   {
                     regoff_t shorter_len = 0;
