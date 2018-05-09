@@ -411,8 +411,9 @@ initialize_unibyte_mask (struct grep_ctx *ctx)
      bits work better.  */
   unsigned char mask = 0;
   int ms1b = 1;
+  signed char *sbclen = ctx->localeinfo.sbclen;
   for (int i = 1; i <= UCHAR_MAX; i++)
-    if ((ctx->localeinfo.sbclen[i] != 1) & ! (mask & i))
+    if ((sbclen[i] != 1) & ! (mask & i))
       {
         while (ms1b * 2 <= i)
           ms1b *= 2;
@@ -438,12 +439,13 @@ skip_easy_bytes (struct grep_ctx *ctx, char const *buf)
      the buffer end, but that's benign.  */
   char const *p;
   uword const *s;
+  char unibyte_mask = ctx->unibyte_mask;
   for (p = buf; (uintptr_t) p % sizeof (uword) != 0; p++)
-    if (to_uchar (*p) & ctx->unibyte_mask)
+    if (to_uchar (*p) & unibyte_mask)
       return p;
-  for (s = CAST_ALIGNED (uword const *, p); ! (*s & ctx->unibyte_mask); s++)
+  for (s = CAST_ALIGNED (uword const *, p); ! (*s & unibyte_mask); s++)
     continue;
-  for (p = (char const *) s; ! (to_uchar (*p) & ctx->unibyte_mask); p++)
+  for (p = (char const *) s; ! (to_uchar (*p) & unibyte_mask); p++)
     continue;
   return p;
 }
@@ -1024,7 +1026,8 @@ prtext (struct grep_ctx *ctx, char *beg, char *lim)
       /* Deal with leading context.  */
       char const *bp = lastout ? lastout : bufbeg;
       intmax_t i;
-      for (i = 0; i < ctx->options[CONTEXT_BEFORE]; ++i)
+      intmax_t before = ctx->options[CONTEXT_BEFORE];
+      for (i = 0; i < before; ++i)
         if (p > bp)
           do
             --p;
@@ -1225,15 +1228,16 @@ grep_run (struct grep_ctx *ctx)
         /* The last OUT_BEFORE lines at the end of the buffer will be needed as
            leading context if there is a matching line at the begin of the
            next data. Make beg point to their begin.  */
-        intmax_t i = 0;
-        ctx->beg = ctx->lim;
-        while (i < ctx->options[CONTEXT_BEFORE] && ctx->beg > bufbeg && ctx->beg != lastout)
+        intmax_t i = 0, before = ctx->options[CONTEXT_BEFORE];
+        char *tmp_beg = ctx->lim;
+        while (i < before && tmp_beg > bufbeg && tmp_beg != lastout)
         {
             ++i;
             do
-                --ctx->beg;
-            while (ctx->beg[-1] != eol);
+                --tmp_beg;
+            while (tmp_beg[-1] != eol);
         }
+        ctx->beg = tmp_beg;
 
         /* Detect whether leading context is adjacent to previous output.  */
         if (ctx->beg != lastout)

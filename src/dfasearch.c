@@ -76,6 +76,7 @@ kwsmusts (struct grep_ctx *ctx, struct dfa_comp *dc)
   if (!dm)
     return;
   dc->kwset = kwsinit (ctx, false);
+  char eol = ctx->options[NULL_BOUND] ? '\0' : '\n';
   if (dm->exact)
     {
       /* Prepare a substring whose presence implies a match.
@@ -86,12 +87,12 @@ kwsmusts (struct grep_ctx *ctx, struct dfa_comp *dc)
       ptrdiff_t new_len = old_len + dm->begline + dm->endline;
       char *must = xmalloc (new_len);
       char *mp = must;
-      *mp = ctx->options[NULL_BOUND] ? '\0' : '\n';
+      *mp = eol;
       mp += dm->begline;
       dc->begline |= dm->begline;
       memcpy (mp, dm->must, old_len);
       if (dm->endline)
-        mp[old_len] = ctx->options[NULL_BOUND] ? '\0' : '\n';
+        mp[old_len] = eol;
       kwsincr (dc->kwset, must, new_len);
       free (must);
     }
@@ -231,7 +232,8 @@ EGexecute (struct grep_ctx *ctx, void *vdc, char const *buf, size_t size, size_t
   bool dfafast = dfaisfast (dc->dfa);
 
   bool match_word = ctx->options[MATCH_WORD],
-    match_line = ctx->options[MATCH_LINE];
+    match_line = ctx->options[MATCH_LINE],
+    singlebyte = !ctx->localeinfo.multibyte | ctx->localeinfo.using_utf8;
 
   mb_start = buf;
   buflim = buf + size;
@@ -284,7 +286,7 @@ EGexecute (struct grep_ctx *ctx, void *vdc, char const *buf, size_t size, size_t
 
               if (exact_kwset_match)
                 {
-                  if (!ctx->localeinfo.multibyte | ctx->localeinfo.using_utf8)
+                  if (singlebyte)
                     goto success;
                   if (mb_start < beg)
                     mb_start = beg;
